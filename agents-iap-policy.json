@@ -1,0 +1,10 @@
+{
+  "bindings": [
+    {
+      "role": "roles/iap.egressor",
+      "members": [
+        "principalSet://agents.global.org-820797041517.system.id.goog/attribute.platformContainer/aiplatform/projects/275388304596"
+      ]
+    }
+  ]
+}

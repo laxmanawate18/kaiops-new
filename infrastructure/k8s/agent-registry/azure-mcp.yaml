@@ -1,0 +1,13 @@
+apiVersion: ai.google.cloud/v1alpha
+kind: MCPServer
+metadata:
+  name: azure-mcp
+  description: "Azure Monitor and AKS monitoring tools"
+spec:
+  image: gcr.io/${PROJECT_ID}/azure-mcp-server:latest
+  env:
+    - name: AZURE_SUBSCRIPTION_ID
+      valueFrom:
+        secretKeyRef:
+          name: azure-credentials
+          key: subscription_id

@@ -1,0 +1,17 @@
+apiVersion: ai.google.cloud/v1alpha
+kind: MCPServer
+metadata:
+  name: gcp-mcp
+  description: "GCP Cloud Logging and Monitoring tools"
+spec:
+  image: us-central1-docker.pkg.dev/${PROJECT_ID}/mcp-servers/gcp-mcp-server:latest
+  env:
+    - name: GOOGLE_PROJECT_ID
+      valueFrom:
+        configMapKeyRef:
+          name: gcp-config
+          key: project_id
+    - name: MCP_SCRIPT
+      value: gcp-server.gcp_mcp_server
+    - name: GCP_MOCK_MODE
+      value: "false"

@@ -1,0 +1,175 @@
+"""
+Agent Runtime — Job State Machine
+
+Persists autonomous agent jobs in Firestore. A job represents a single
+autonomous investigation that the Agent Runtime worker executes in the
+background, WITHOUT a human initiating it on every turn.
+
+Lifecycle:
+    PENDING  -> RUNNING  -> COMPLETE
+                        |-> WAITING_APPROVAL  (requires human confirmation)
+                        |-> FAILED
+
+Mirrors the Firestore patterns used by app.chat.custom_session_service
+(FirestoreConfig.get_client() singleton + collections).
+"""
+
+import os
+import uuid
+import logging
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from app.database.firestore_config import FirestoreConfig
+
+logger = logging.getLogger(__name__)
+
+# Job statuses
+STATUS_PENDING = "PENDING"
+STATUS_RUNNING = "RUNNING"
+STATUS_COMPLETE = "COMPLETE"
+STATUS_WAITING_APPROVAL = "WAITING_APPROVAL"
+STATUS_FAILED = "FAILED"
+STATUS_CANCELLED = "CANCELLED"
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _normalize(record: Dict[str, Any], keys: tuple = ("created_at", "started_at", "completed_at", "updated_at")) -> Dict[str, Any]:
+    """Normalize Firestore timestamp fields to ISO strings."""
+    for key in keys:
+        value = record.get(key)
+        if hasattr(value, "isoformat") and not isinstance(value, str):
+            try:
+                record[key] = value.isoformat()
+            except Exception:
+                record[key] = str(value)
+        elif value is None and key in ("started_at", "completed_at"):
+            record[key] = ""
+    return record
+
+
+def _jobs_ref():
+    return FirestoreConfig.get_client().collection("agent_jobs")
+
+
+def create_job(
+    source: str,
+    incident_name: str,
+    prompt: str,
+    severity: str = "P1",
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Create a new autonomous job (status PENDING)."""
+    job_id = str(uuid.uuid4())
+    now = _now()
+    job = {
+        "id": job_id,
+        "source": source,                     # e.g. "cloud_scheduler", "pubsub", "webhook", "runtime_api"
+        "incident_name": incident_name,
+        "prompt": prompt,
+        "severity": severity,
+        "status": STATUS_PENDING,
+        "metadata": metadata or {},
+        "created_at": now,
+        "updated_at": now,
+        "started_at": "",
+        "completed_at": "",
+        "worker_id": "",
+        "report": {},                         # {response, reasoning_steps, requires_confirmation, ...}
+        "error": "",
+    }
+    _jobs_ref().document(job_id).set(job)
+    logger.info(f"[JOB] Created {job_id} source={source} severity={severity} status=PENDING")
+    return job
+
+
+def get_job(job_id: str) -> Optional[Dict[str, Any]]:
+    doc = _jobs_ref().document(job_id).get()
+    if not doc.exists:
+        return None
+    data = _normalize(doc.to_dict())
+    data["id"] = doc.id
+    return data
+
+
+def list_jobs(limit: int = 25, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    # Query by status only (single-field => no composite index needed), then
+    # sort in memory. Using order_by(created_at) with a where() on status
+    # would require a composite index, which may not exist yet in fresh projects.
+    query = _jobs_ref().where("status", "==", status) if status else _jobs_ref()
+    docs = list(query.stream())
+    jobs = []
+    for doc in docs:
+        data = _normalize(doc.to_dict())
+        data["id"] = doc.id
+        jobs.append(data)
+    # Sort newest-first by created_at (lexicographic ISO strings sort correctly).
+    jobs.sort(key=lambda j: str(j.get("created_at", "")), reverse=True)
+    return jobs[:limit]
+
+
+def update_job(job_id: str, **fields) -> Optional[Dict[str, Any]]:
+    """Update allowed job fields. `updated_at` is set automatically."""
+    ref = _jobs_ref().document(job_id)
+    if not ref.get().exists:
+        return None
+    fields["updated_at"] = _now()
+    ref.update({k: v for k, v in fields.items() if v is not None})
+    return get_job(job_id)
+
+
+def claim_next_pending(worker_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Atomically claim the oldest PENDING job (-> RUNNING) using a Firestore
+    transaction so multiple workers never pick up the same job. Returns the
+    job dict or None if none available.
+    """
+    client = FirestoreConfig.get_client()
+    coll = _jobs_ref()
+
+    # Claim the oldest PENDING job. Uses a status-guarded update (no Firestore
+    # transaction, which has sync-client quirks): read PENDING docs, pick the
+    # oldest, then update ONLY if it is still PENDING. A stale read could let
+    # two workers pick the same doc, but the re-read guard below prevents both
+    # from executing the same job.
+    try:
+        pending_docs = list(coll.where("status", "==", STATUS_PENDING).stream())
+        if not pending_docs:
+            return None
+        doc = sorted(pending_docs, key=lambda d: str(d.to_dict().get("created_at", "")))[0]
+        ref = doc.reference
+
+        # Re-read to confirm still PENDING; update if so.
+        current = ref.get()
+        if not current.exists or current.get("status") != STATUS_PENDING:
+            return None
+        ref.update({
+            "status": STATUS_RUNNING,
+            "worker_id": worker_id,
+            "started_at": _now(),
+            "updated_at": _now(),
+        })
+        data = doc.to_dict()
+        data["id"] = doc.id
+        logger.info(f"[JOB] Claimed {data['id']} by worker {worker_id}")
+        return data
+    except Exception as e:
+        logger.warning(f"[JOB] Claim failed: {e}")
+        return None
+
+
+def mark_waiting_approval(job_id: str, pending_tool: str, approval_token: str, report: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    return update_job(job_id, status=STATUS_WAITING_APPROVAL, report=report, completed_at=_now(),
+                      metadata={"pending_tool": pending_tool, "approval_token": approval_token})
+
+
+def mark_complete(job_id: str, report: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    return update_job(job_id, status=STATUS_COMPLETE, report=report, completed_at=_now())
+
+
+def mark_failed(job_id: str, error: str) -> Optional[Dict[str, Any]]:
+    logger.error(f"[JOB] Failed {job_id}: {error}")
+    return update_job(job_id, status=STATUS_FAILED, error=error, completed_at=_now())

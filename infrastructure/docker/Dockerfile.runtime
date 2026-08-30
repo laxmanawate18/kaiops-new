@@ -1,0 +1,28 @@
+# KaiOps Agent Platform Runtime (BYOC) container.
+# Implements the Agent Runtime contract (0.0.0.0:8080) and wraps the KaiOps
+# root_agent in vertexai AdkApp (managed Sessions + Memory Bank + OTel).
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install OS deps needed by google-cloud and grpc.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy app + requirements first for better layer caching.
+COPY agent-runtime/ /app/agent-runtime/
+COPY apps/api/ /app/apps/api/
+COPY requirements.txt /app/requirements.txt
+
+# Install dependencies (pipeline for layer cache benefit).
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+WORKDIR /app/agent-runtime
+
+# Health endpoint + start.
+EXPOSE 8080
+CMD ["python", "server.py"]

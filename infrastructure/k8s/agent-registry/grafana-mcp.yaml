@@ -1,0 +1,7 @@
+apiVersion: ai.google.cloud/v1alpha
+kind: MCPServer
+metadata:
+  name: grafana-mcp
+  description: "Grafana dashboard and metrics integration"
+spec:
+  image: gcr.io/${PROJECT_ID}/grafana-mcp-server:latest

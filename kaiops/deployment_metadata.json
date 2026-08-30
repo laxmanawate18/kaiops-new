@@ -1,0 +1,14 @@
+{
+  "remote_agent_runtime_id": "projects/275388304596/locations/us-central1/reasoningEngines/660663002025951232",
+  "deployment_target": "agent_runtime",
+  "is_a2a": true,
+  "agent_directory": "app",
+  "deployment_timestamp": "2026-08-28T19:23:34.092928+00:00",
+  "pending_operation": {
+    "operation_name": "projects/275388304596/locations/us-central1/reasoningEngines/2867849031902560256/operations/8329356679883784192",
+    "project": "project-3da8cb5f-328e-44d3-b7a",
+    "location": "us-central1",
+    "deployment_target": "agent_runtime",
+    "started_at": "2026-08-29T06:30:35.130018+00:00"
+  }
+}

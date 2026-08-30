@@ -1,0 +1,70 @@
+# Rendered at container start by docker-entrypoint.sh (envsubst).
+# Nothing environment-specific is baked into the image — the previous build
+# hardcoded a production Cloud Run URL and a GCP project number into a
+# committed nginx.conf, which meant every environment shipped pointed at prod.
+
+server {
+    listen       ${PORT};
+    server_name  _;
+    root         /usr/share/nginx/html;
+    index        index.html;
+
+    # Don't advertise the nginx version on responses or error pages.
+    server_tokens off;
+
+    # --- Security headers (all absent from the previous config) ------------
+    add_header X-Frame-Options            "DENY"            always;
+    add_header X-Content-Type-Options     "nosniff"         always;
+    add_header Referrer-Policy            "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy         "geolocation=(), microphone=(), camera=()" always;
+    # The bundle is self-contained apart from Google Fonts; WebGL needs blob: workers.
+    add_header Content-Security-Policy    "default-src 'self'; script-src 'self' 'unsafe-inline' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' ${BACKEND_URL}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+
+    gzip              on;
+    gzip_vary         on;
+    gzip_min_length   1024;
+    gzip_proxied      any;
+    gzip_types        text/plain text/css application/javascript application/json
+                      image/svg+xml application/wasm;
+
+    # Hashed assets are immutable; index.html must never be cached or a deploy
+    # can leave a client pinned to a stale bundle.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+
+    # --- API proxy ---------------------------------------------------------
+    location /api/ {
+        proxy_pass         ${BACKEND_URL};
+        proxy_ssl_server_name on;
+        proxy_http_version 1.1;
+
+        # Without these the backend sees nginx's IP for every request, which
+        # makes rate limiting and audit logging by client IP impossible.
+        proxy_set_header   Host              $proxy_host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   X-Request-Id      $request_id;
+
+        # An agent RCA turn is synchronous and can run for minutes.
+        proxy_connect_timeout 30s;
+        proxy_send_timeout    300s;
+        proxy_read_timeout    300s;
+
+        # Required for server-sent events to stream rather than buffer.
+        proxy_buffering       off;
+        proxy_cache           off;
+    }
+
+    # SPA fallback — must come last.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

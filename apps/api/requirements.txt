@@ -1,0 +1,33 @@
+google-adk==1.21.0
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-multipart
+python-jose
+opik
+pymongo
+passlib
+pydantic[email]
+argon2_cffi
+mcp<2.0.0
+aiohttp>=3.9.0
+requests>=2.31.0
+cachetools>=5.0.0
+
+# GCP Cloud Logging & Monitoring APIs
+google-cloud-logging>=3.8.0
+google-cloud-monitoring>=2.16.0
+google-auth>=2.23.0
+
+# Pin below 2.35: api-core 2.35.0 URL-encodes Firestore's "(default)" database id,
+# breaking all Firestore calls with "400 Invalid database id %28default%29".
+google-api-core>=2.23.0,<2.35
+
+google-cloud-firestore>=2.13.0
+
+# Kubernetes remediation executor
+kubernetes>=29.0.0
+
+# Dynamic GKE cluster resolution for the remediation executor (Cloud Run)
+google-cloud-container>=2.40.0

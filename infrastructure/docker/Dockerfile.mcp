@@ -1,0 +1,27 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc curl git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip
+RUN pip install --upgrade pip setuptools wheel
+
+# Install FastAPI and Uvicorn for the proxy
+RUN pip install fastapi uvicorn pydantic python-dotenv "mcp<2.0.0" requests
+
+COPY mcp-servers/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt || true
+
+# Copy all MCP server code
+COPY mcp-servers/ .
+COPY mcp-servers/shared/mcp_proxy.py .
+
+# The MCP_SCRIPT env var will be passed by Cloud Run
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["python", "mcp_proxy.py"]

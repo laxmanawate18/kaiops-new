@@ -1,0 +1,126 @@
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+.venv-win/
+.venv.*/
+
+# Environment / Secrets (never commit)
+.env
+.env.*
+*.env
+**/.env
+**/.env.*
+**/*.env
+# ...but DO track example templates (they contain only key names, no values)
+!.env.example
+!.env.*.example
+!*.env.example
+!**/.env.example
+!**/.env.*.example
+!**/*.env.example
+
+# Private keys / credentials
+*.pem
+*.key
+id_rsa*
+*.p12
+*.pfx
+*.jks
+credentials.json
+service-account*.json
+application_default_credentials.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+adk_sessions.db
+
+# Environment
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+build/
+
+# Coverage
+.coverage
+htmlcov/
+
+# Misc
+.cache/
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Terraform local state (global-ready IaC)
+**/.terraform/
+*.tfplan
+terraform.tfstate*
+crash.log
+.terraform.lock.hcl
+
+# Runtime / one-shot helpers (not for VCS)
+cert_monitor.py
+cert_monitor*.log
+_tmp_*.bat
+orphan_engines.txt
+*.stackdump
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Cloud Run / gcloud temp
+.gcloudignore
+.DS_Store

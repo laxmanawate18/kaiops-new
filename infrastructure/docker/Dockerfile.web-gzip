@@ -1,0 +1,12 @@
+# Patch image: fixes nginx gzip + Cache-Control policy on top of the
+# currently-running kaiops-web frontend bundle (no app rebuild).
+# The official nginx entrypoint re-renders /etc/nginx/templates/*.template
+# at container start, so copying a new template is sufficient.
+ARG BASE_IMAGE=us-central1-docker.pkg.dev/project-3da8cb5f-328e-44d3-b7a/cloud-run-source-deploy/kaiops-web:latest
+FROM ${BASE_IMAGE}
+
+COPY kubernetes/nginx.web.template /etc/nginx/templates/default.conf.template
+
+EXPOSE 8080
+
+CMD ["nginx", "-g", "daemon off;"]

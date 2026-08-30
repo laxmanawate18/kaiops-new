@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_apps_api_app_auth_team_database_mongo_py", "label": "team_database_mongo.py", "file_type": "code", "source_file": "apps/api/app/auth/team_database_mongo.py", "source_location": "L1"}], "edges": [], "raw_calls": []}

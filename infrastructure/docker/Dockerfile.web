@@ -1,0 +1,35 @@
+# Multi-stage build for the kaiops-web TypeScript frontend
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# API base stays same-origin (/api/v1); nginx proxies to the backend.
+ENV VITE_API_BASE_URL=/api/v1
+
+COPY kaiops-web/package*.json ./
+RUN npm ci --no-audit --no-fund
+
+COPY kaiops-web/ .
+RUN npm run build
+
+FROM nginx:alpine
+
+RUN rm -f /etc/nginx/conf.d/default.conf
+
+# The official nginx image auto-runs envsubst on /etc/nginx/templates/*.template
+# into /etc/nginx/conf.d/, expanding ${BACKEND_URL} / ${BACKEND_HOST}.
+ARG BACKEND_URL=https://sre-agent-backend-275388304596.us-central1.run.app
+ARG BACKEND_HOST=sre-agent-backend-275388304596.us-central1.run.app
+ENV BACKEND_URL=${BACKEND_URL} \
+    BACKEND_HOST=${BACKEND_HOST}
+
+COPY kubernetes/nginx.web.template /etc/nginx/templates/default.conf.template
+
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --quiet --tries=1 --spider http://localhost:8080/index.html || exit 1
+
+EXPOSE 8080
+
+CMD ["nginx", "-g", "daemon off;"]

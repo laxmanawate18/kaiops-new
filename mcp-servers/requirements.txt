@@ -1,0 +1,25 @@
+# MCP servers dependencies (shared across all cloud MCP servers)
+# Common HTTP + FastMCP
+mcp>=1.2.0
+fastapi>=0.110.0
+uvicorn>=0.29.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+aiohttp>=3.10.0
+
+# AWS RCA server (AWS CloudWatch / EKS)
+boto3>=1.34.0
+
+# GCP RCA server (Cloud Logging / Monitoring)
+google-cloud-logging>=3.10.0
+google-cloud-monitoring>=2.20.0
+google-auth>=2.23.0
+
+# Azure RCA server (Log Analytics + AKS/kubectl)
+azure-identity>=1.16.0
+azure-monitor-query>=1.3.0
+azure-mgmt-monitor>=6.0.0
+kubernetes>=29.0.0
+
+# Grafana / GitHub / ArgoCD servers (REST)
+pygithub>=2.3.0

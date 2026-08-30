@@ -1,0 +1,26 @@
+# MCP Server HTTP proxy Dockerfile
+# Usage: build with build-arg MCP_SCRIPT=gcp-server.gcp_mcp_server (or aws-server.aws_mcp_server, etc.)
+FROM python:3.12-slim
+
+WORKDIR /code
+
+# Copy shared + all server source
+COPY ./shared ./shared
+COPY ./gcp-server ./gcp-server
+COPY ./aws-server ./aws-server
+COPY ./azure-server ./azure-server
+COPY ./github-server ./github-server
+COPY ./grafana-server ./grafana-server
+COPY ./argocd-server ./argocd-server
+COPY ./requirements.txt ./requirements.txt
+
+# Install deps (MCP SDK, google cloud libs, fastapi, uvicorn)
+RUN pip install --no-cache-dir -r requirements.txt fastapi uvicorn python-dotenv mcp
+
+# Which MCP server module to serve (e.g. gcp-server.gcp_mcp_server)
+ARG MCP_SCRIPT=gcp-server.gcp_mcp_server
+ENV MCP_SCRIPT=${MCP_SCRIPT}
+
+EXPOSE 8080
+
+CMD ["python", "shared/mcp_proxy.py"]

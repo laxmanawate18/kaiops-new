@@ -1,0 +1,28 @@
+apiVersion: ai.google.cloud/v1alpha
+kind: Agent
+metadata:
+  name: kaiops-sre-agent
+  description: "Multi-Cloud Root Cause Analysis Platform - SRE Root Agent"
+  labels:
+    environment: production
+spec:
+  model:
+    provider: google
+    name: gemini-1.5-pro
+    temperature: 0.2
+  instructions: |
+    You are the KaiOps SRE Root Agent for diagnosing and resolving infrastructure issues.
+  mcpServerRefs:
+    - name: aws-mcp
+    - name: gcp-mcp
+    - name: azure-mcp
+    - name: grafana-mcp
+    - name: argocd-mcp
+    - name: github-mcp
+  memory:
+    type: mongodb
+    connectionString:
+      secretKeyRef:
+        name: db-credentials
+        key: mongodb_url
+    databaseName: kaiops

@@ -1,0 +1,134 @@
+[
+  {
+    "group": "System",
+    "name": "Health Check",
+    "passed": true,
+    "details": 200
+  },
+  {
+    "group": "Auth",
+    "name": "Admin Login",
+    "passed": true,
+    "details": null
+  },
+  {
+    "group": "Auth",
+    "name": "Get Profile (/auth/me)",
+    "passed": true,
+    "details": 200
+  },
+  {
+    "group": "Teams",
+    "name": "List Teams",
+    "passed": true,
+    "details": "3 teams found"
+  },
+  {
+    "group": "Teams",
+    "name": "Get Team by ID",
+    "passed": true,
+    "details": 200
+  },
+  {
+    "group": "Teams",
+    "name": "Get Team Members",
+    "passed": true,
+    "details": 200
+  },
+  {
+    "group": "Applications",
+    "name": "List Applications",
+    "passed": true,
+    "details": "0 apps found"
+  },
+  {
+    "group": "Applications",
+    "name": "Get App Stats",
+    "passed": true,
+    "details": 200
+  },
+  {
+    "group": "Applications",
+    "name": "Create Application",
+    "passed": true,
+    "details": null
+  },
+  {
+    "group": "Applications",
+    "name": "Toggle App Status",
+    "passed": true,
+    "details": 200
+  },
+  {
+    "group": "Applications",
+    "name": "Delete Application",
+    "passed": true,
+    "details": 204
+  },
+  {
+    "group": "Feedback",
+    "name": "Get My Feedback",
+    "passed": true,
+    "details": 200
+  },
+  {
+    "group": "Feedback",
+    "name": "Get My Feedback Stats",
+    "passed": true,
+    "details": 200
+  },
+  {
+    "group": "Feedback",
+    "name": "Get Global Feedback Stats",
+    "passed": true,
+    "details": 200
+  },
+  {
+    "group": "Chat",
+    "name": "Create Chat Session",
+    "passed": true,
+    "details": "cfd6a5f9-9779-469d-b803-78b5e4ef8016"
+  },
+  {
+    "group": "Chat",
+    "name": "List Sessions",
+    "passed": true,
+    "details": 200
+  },
+  {
+    "group": "Agents",
+    "name": "AWS Agent RCA Flow",
+    "passed": true,
+    "details": 200
+  },
+  {
+    "group": "Agents",
+    "name": "GitHub Agent Flow",
+    "passed": true,
+    "details": 200
+  },
+  {
+    "group": "Agents",
+    "name": "ArgoCD Agent Flow",
+    "passed": true,
+    "details": 200
+  },
+  {
+    "group": "Agents",
+    "name": "GCP Agent Flow",
+    "passed": true,
+    "details": 200
+  },
+  {
+    "group": "Agents",
+    "name": "Azure Agent Flow",
+    "passed": true,
+    "details": 200
+  },
+  {
+    "group": "Chat",
+    "name": "Delete Chat Session",
+    "passed": true,
+    "details": 200
+  }
+]

@@ -1,0 +1,9 @@
+{
+  "pending_operation": {
+    "operation_name": "projects/275388304596/locations/us-central1/reasoningEngines/2417489069165510656/operations/3067146805905981440",
+    "project": "project-3da8cb5f-328e-44d3-b7a",
+    "location": "us-central1",
+    "deployment_target": "agent_runtime",
+    "started_at": "2026-08-29T06:33:10.622001+00:00"
+  }
+}

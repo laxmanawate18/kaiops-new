@@ -1,0 +1,40 @@
+# Cloud Build: kaiops-web gzip + cache-policy fix.
+# Dockerfile.web in this snapshot cannot rebuild the app (tsc path alias
+# mismatch vs. the original build), so we layer the fixed nginx template on
+# top of the currently-running image instead — same artifact repo path,
+# bumped tag :gzip-1 (+ :latest refresh).
+
+substitutions:
+  _IMAGE: 'us-central1-docker.pkg.dev/project-3da8cb5f-328e-44d3-b7a/cloud-run-source-deploy/kaiops-web'
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-web-gzip'
+    args:
+      - 'build'
+      - '--build-arg'
+      - 'BASE_IMAGE=${_IMAGE}:latest'
+      - '-t'
+      - '${_IMAGE}:gzip-1'
+      - '-t'
+      - '${_IMAGE}:latest'
+      - '-f'
+      - 'infrastructure/docker/Dockerfile.web-gzip'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-web'
+    args:
+      - 'push'
+      - '${_IMAGE}'
+
+images:
+  - '${_IMAGE}:gzip-1'
+  - '${_IMAGE}:latest'
+
+options:
+  machineType: 'E2_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: '1800s'
+

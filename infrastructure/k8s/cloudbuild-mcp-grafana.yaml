@@ -1,0 +1,11 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build'
+    args: ['build','-t','us-central1-docker.pkg.dev/$PROJECT_ID/mcp-servers/grafana-mcp-server:latest','-f','infrastructure/docker/Dockerfile.mcp','.']
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push'
+    args: ['push','us-central1-docker.pkg.dev/$PROJECT_ID/mcp-servers/grafana-mcp-server:latest']
+    waitFor: ['build']
+images: ['us-central1-docker.pkg.dev/$PROJECT_ID/mcp-servers/grafana-mcp-server:latest']
+options: {logging: CLOUD_LOGGING_ONLY}
+timeout: '1800s'

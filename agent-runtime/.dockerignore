@@ -1,0 +1,15 @@
+# Exclude bulky/generated dirs from the Agent Runtime build context.
+**/.venv
+**/.venv-win
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.git
+**.claude
+**.copilot
+**/graphify-out
+**/mcp-servers
+**/kaiops-new-version
+**/chat_out*.txt
+**/deploy*.log
+**/*.zip

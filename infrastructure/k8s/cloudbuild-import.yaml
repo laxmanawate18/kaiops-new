@@ -1,0 +1,17 @@
+steps:
+  # Copy the locally-built image tarball from GCS
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - 'gsutil cp gs://project-3da8cb5f-328e-44d3-b7a_cloudbuild/source/kaiops-web.tar /workspace/kaiops-web.tar && echo COPY_OK'
+  # Load it into the docker daemon and push to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - 'docker load -i /workspace/kaiops-web.tar && docker push us-central1-docker.pkg.dev/project-3da8cb5f-328e-44d3-b7a/cloud-run-source-deploy/kaiops-web:latest && echo PUSH_OK'
+images:
+  - 'us-central1-docker.pkg.dev/project-3da8cb5f-328e-44d3-b7a/cloud-run-source-deploy/kaiops-web:latest'
+options:
+  logging: CLOUD_LOGGING_ONLY

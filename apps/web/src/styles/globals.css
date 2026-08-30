@@ -1,0 +1,221 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * KaiOPS tokens.
+ *
+ * Palette intent: a near-black canvas with a cool blue undertone so the cyan
+ * brand reads as "instrumentation" rather than neon. Status colours are tuned
+ * to sit at similar perceived lightness on that canvas, so no single state
+ * shouts louder than another purely because of its hue.
+ *
+ * Contrast: every `content` value against its intended surface clears WCAG AA
+ * (4.5:1) for body text; `content-subtle` is reserved for >=16px or bold text.
+ */
+@layer base {
+  :root {
+    /* Structural */
+    --canvas: 222 47% 4%;
+    --surface: 222 40% 7%;
+    --surface-raised: 221 36% 10%;
+    --surface-overlay: 221 34% 13%;
+    --surface-sunken: 224 48% 3%;
+
+    --line: 220 24% 18%;
+    --line-strong: 218 22% 26%;
+
+    --content: 210 34% 96%;
+    --content-muted: 214 16% 72%;
+    --content-subtle: 216 13% 55%;
+    --content-inverse: 222 47% 5%;
+
+    --shadow: 224 60% 2%;
+
+    /* Brand — cyan/teal instrumentation */
+    --brand-50: 186 92% 92%;
+    --brand-100: 186 88% 84%;
+    --brand-200: 186 84% 72%;
+    --brand-300: 187 82% 60%;
+    --brand-400: 188 84% 50%;
+    --brand-500: 189 90% 44%;
+    --brand-600: 191 92% 36%;
+    --brand-700: 193 88% 28%;
+    --brand-800: 195 82% 21%;
+    --brand-900: 197 78% 15%;
+
+    --accent: 258 82% 66%;
+    --accent-soft: 258 60% 20%;
+
+    /* Status */
+    --ok: 158 72% 45%;
+    --ok-soft: 158 52% 14%;
+    --warn: 38 92% 56%;
+    --warn-soft: 36 60% 14%;
+    --danger: 353 82% 60%;
+    --danger-soft: 353 56% 15%;
+    --info: 212 92% 62%;
+    --info-soft: 213 58% 16%;
+    --neutral: 216 14% 58%;
+    --neutral-soft: 218 20% 15%;
+
+    /* Incident severity */
+    --sev-p0: 353 84% 58%;
+    --sev-p1: 20 90% 58%;
+    --sev-p2: 38 92% 56%;
+    --sev-p3: 205 90% 60%;
+
+    /* Categorical series.
+       These are NOT free choices — each step was snapped so the whole ramp
+       clears, on the dark chart surface (#0B0F19):
+         · OKLCH L inside the dark band 0.48–0.67
+         · chroma >= 0.10 (below that a hue reads as gray)
+         · adjacent-pair separation under simulated protanopia/deuteranopia
+         · >= 3:1 contrast against the surface
+       Worst adjacent pair is violet↔cyan at ΔE 9.4 (deuteranopia), above the
+       target of 8. Re-run the palette validator before changing any of these;
+       brightening them for "pop" is what breaks the CVD separation. */
+    --series-1: 189 95% 36%;
+    --series-2: 262 70% 65%;
+    --series-3: 158 65% 37%;
+    --series-4: 40 95% 36%;
+    --series-5: 330 75% 55%;
+    --series-6: 214 75% 57%;
+    --series-7: 22 90% 45%;
+    --series-8: 174 80% 35%;
+
+    --ring: 189 90% 50%;
+  }
+
+  * {
+    @apply border-line;
+  }
+
+  html {
+    @apply scroll-smooth antialiased;
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-canvas text-content font-sans;
+    font-feature-settings: 'cv11', 'ss01';
+    font-variation-settings: 'opsz' 32;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Visible, branded focus ring — never remove focus styling outright. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring/70 ring-offset-2 ring-offset-canvas;
+  }
+
+  ::selection {
+    @apply bg-brand-500/30 text-content;
+  }
+
+  /* Tabular numerals wherever numbers change in place, so digits don't jitter. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /*
+   * Surfaces. `panel` is the workhorse. Backdrop blur is applied sparingly —
+   * it is a per-frame GPU cost and the previous build put it on every card.
+   */
+  .panel {
+    @apply rounded-xl border border-line bg-surface/80 shadow-raised;
+  }
+
+  .panel-raised {
+    @apply rounded-xl border border-line bg-surface-raised shadow-float;
+  }
+
+  .panel-glass {
+    @apply rounded-xl border border-white/5 bg-surface/60 shadow-float backdrop-blur-xl;
+  }
+
+  /* Hairline separator that fades at both ends — reads softer than a solid rule. */
+  .rule-fade {
+    @apply h-px w-full border-0;
+    background: linear-gradient(
+      to right,
+      transparent,
+      hsl(var(--line-strong) / 0.8) 15%,
+      hsl(var(--line-strong) / 0.8) 85%,
+      transparent
+    );
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--line-strong)) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    @apply h-1.5 w-1.5;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-line-strong/70;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    @apply bg-line-strong;
+  }
+
+  /* Skeleton shimmer used by every loading placeholder. */
+  .skeleton {
+    @apply relative overflow-hidden rounded-md bg-surface-raised;
+  }
+  .skeleton::after {
+    @apply absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/[0.04] to-transparent;
+    content: '';
+  }
+
+  /* Faint technical grid, used behind hero/empty states. */
+  .bg-grid {
+    background-image:
+      linear-gradient(hsl(var(--line) / 0.5) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--line) / 0.5) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+  /* Masks a long scroll region so content fades rather than hard-clipping. */
+  .mask-fade-b {
+    mask-image: linear-gradient(to bottom, #000 85%, transparent 100%);
+  }
+}
+
+/*
+ * Respect the OS reduced-motion setting. The previous build had ~15 infinite
+ * animations and no such guard; for users with vestibular sensitivity that is
+ * an accessibility failure, not a preference.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Dark theme scrollbar (A1) ─────────────────────────────────────────── */
+* { scrollbar-width: thin; scrollbar-color: rgba(34,211,238,.30) transparent }
+::-webkit-scrollbar { width: 8px; height: 8px }
+::-webkit-scrollbar-track { background: transparent }
+::-webkit-scrollbar-thumb { background: rgba(34,211,238,.26); border-radius: 8px }
+::-webkit-scrollbar-thumb:hover { background: rgba(34,211,238,.45) }
+::-webkit-scrollbar-corner { background: transparent }

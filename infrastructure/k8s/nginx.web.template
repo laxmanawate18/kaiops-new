@@ -1,0 +1,58 @@
+# KaiOps web frontend — SPA fallback + reverse proxy to backend Cloud Run service.
+# Processed by nginx entrypoint envsubst: ${BACKEND_URL}, ${BACKEND_HOST}
+
+server {
+    listen 8080;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # API routes proxied to backend (same-origin, avoids CORS)
+    location /api/ {
+        proxy_pass ${BACKEND_URL};
+        proxy_http_version 1.1;
+        proxy_set_header Host ${BACKEND_HOST};
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_ssl_server_name on;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    # ADK-native routes at server root (SSE-ready: buffering off)
+    location ~ ^/(run|run_sse|list-apps|apps)(/|$) {
+        proxy_pass ${BACKEND_URL};
+        proxy_http_version 1.1;
+        proxy_set_header Host ${BACKEND_HOST};
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 3600s;
+        chunked_transfer_encoding on;
+        proxy_ssl_server_name on;
+    }
+
+    # Static assets: long cache (hashed filenames)
+    #
+    # Single Cache-Control policy: a plain `expires 30d` would emit its own
+    # `Cache-Control: max-age=2592000` line in addition to the add_header line,
+    # duplicating the header. One explicit header covers it (30d = 2592000s).
+    # Brotli directives intentionally omitted: nginx:alpine ships without
+    # ngx_brotli and an unknown directive would crash nginx at start-up.
+    location ^~ /assets/ {
+        gzip on;
+        gzip_comp_level 6;
+        gzip_min_length 256;
+        gzip_types text/css application/javascript application/json image/svg+xml font/woff2 application/font-woff;
+        gzip_vary on;
+
+        add_header Cache-Control "public, max-age=2592000, immutable";
+    }
+
+    # SPA fallback: HTML shell must never be cached (hash-named assets carry the cache).
+    location / {
+        try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-cache";
+    }
+}

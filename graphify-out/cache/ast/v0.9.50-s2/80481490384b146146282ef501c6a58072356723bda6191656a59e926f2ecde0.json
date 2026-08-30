@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_sre_agent_backend_app_auth_team_database_mongo_py", "label": "team_database_mongo.py", "file_type": "code", "source_file": "sre-agent-backend/app/auth/team_database_mongo.py", "source_location": "L1"}], "edges": [], "raw_calls": []}

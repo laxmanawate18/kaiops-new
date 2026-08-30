@@ -1,0 +1,14 @@
+# Keep Docker build contexts small — exclude heavy/local-only paths
+**/.venv
+**/.venv-win
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.git
+mongodb_backup/
+sre-agent-backend/scratch/
+sre-agent-backend/agents/**/.adk/
+**/dist
+**/.env
+**/.env.local
+kaiops-ui/e2e_test.py

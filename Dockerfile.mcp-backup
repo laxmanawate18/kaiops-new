@@ -1,0 +1,18 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y gcc curl git && rm -rf /var/lib/apt/lists/*
+RUN pip install --upgrade pip setuptools wheel
+RUN pip install fastapi uvicorn pydantic
+
+RUN echo "mcp<2,>=1.25.0\nfastapi\nuvicorn\npydantic\npython-dotenv\nrequests\nboto3\ngoogle-cloud-logging\ngoogle-cloud-monitoring\nazure-identity\nazure-mgmt-resource\nazure-mgmt-monitor\nazure-loganalytics\nazure-monitor-query\nPyGithub" > requirements.txt
+RUN cat requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY mcp-servers/ .
+
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["python", "shared/mcp_proxy.py"]

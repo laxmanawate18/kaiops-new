@@ -1,0 +1,10 @@
+name: kaiops-iap-authz-policy
+target:
+  resources:
+    - "projects/project-3da8cb5f-328e-44d3-b7a/locations/us-central1/agentGateways/kaiops-egress-gw"
+policyProfile: REQUEST_AUTHZ
+action: CUSTOM
+customProvider:
+  authzExtension:
+    resources:
+      - "projects/project-3da8cb5f-328e-44d3-b7a/locations/us-central1/authzExtensions/kaiops-iap-request-authz-ext"

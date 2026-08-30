@@ -1,0 +1,398 @@
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kaiops
+
+---
+# ConfigMap for environment variables
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kaiops-config
+  namespace: kaiops
+data:
+  # API Configuration
+  API_PORT: "8000"
+  API_HOST: "0.0.0.0"
+  API_URL: "http://api.kaiops-sre.searceinc.net"
+  
+  # Application
+  AGENT_DIR: "/app/agents"
+  
+  # Allowed origins for CORS
+  # Frontend domain mapped to 34.44.48.149, API domain mapped to 34.70.16.109
+  ALLOWED_ORIGINS: "http://kaiops-sre.searceinc.net,https://kaiops-sre.searceinc.net,http://api.kaiops-sre.searceinc.net,https://api.kaiops-sre.searceinc.net,http://34.44.48.149,http://34.70.16.109:8000,http://localhost:3000,http://localhost:5173,http://localhost,http://localhost:8000,http://kaiops-frontend,http://127.0.0.1:3000,http://127.0.0.1:8000"
+  
+  # Logging
+  LOG_LEVEL: "INFO"
+  
+  # GCP Configuration
+  GCP_CLUSTER_NAME: "kai-ops"
+  GCP_CLUSTER_ZONE: "us-central1-a"
+  GCP_LOG_RESOURCE_TYPE: "k8s_container"
+  GCP_DEFAULT_NAMESPACE: "default"
+  GCP_LOG_RETENTION_DAYS: "30"
+  GCP_MONITORING_ENABLED: "true"
+  GCP_MOCK_MODE: "false"
+  GOOGLE_PROJECT_ID: "carbon-relic-479214-c1"
+  
+  # AWS Configuration
+  AWS_REGION: "ap-southeast-2"
+  AWS_ACCOUNT_ID: "397174242206"
+  AWS_CLUSTER_NAME: "log-agent-eks"
+  
+  # Azure Configuration
+  AZURE_SUBSCRIPTION_ID: "5a309391-54e8-4597-98ca-1c35c2c9dc09"
+  AZURE_TENANT_ID: "6fbdbe21-98c4-4c02-9fd6-32d368caf60e"
+  
+  # ArgoCD Configuration
+  ARGOCD_URL: "https://52.230.225.226"
+  
+  # Grafana Configuration
+  GRAFANA_URL: "http://172.168.254.97"
+  GRAFANA_ORG_ID: "1"
+  
+  # Cache Configuration
+  REDIS_URL: "redis://redis-service.redis.svc.cluster.local:6379/0"
+  CACHE_TTL_SECONDS: "300"
+  CACHE_TTL_METADATA: "600"
+  CACHE_TTL_APPLICATIONS: "300"
+
+---
+# Note: Secrets are created separately via kubectl create secret
+# kubectl create secret generic kaiops-secrets -n kaiops (see deployment guide)
+
+---
+# Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kaiops-backend
+  namespace: kaiops
+
+---
+# ClusterRole for accessing cluster info
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kaiops-cluster-reader
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "pods/status"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list", "watch"]
+
+---
+# ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kaiops-cluster-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kaiops-cluster-reader
+subjects:
+  - kind: ServiceAccount
+    name: kaiops-backend
+    namespace: kaiops
+
+---
+# Backend Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kaiops-backend
+  namespace: kaiops
+  labels:
+    app: kaiops-backend
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: kaiops-backend
+  template:
+    metadata:
+      labels:
+        app: kaiops-backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+    spec:
+      serviceAccountName: kaiops-backend
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      containers:
+      - name: backend
+        image: gcr.io/carbon-relic-479214-c1/kaiops-backend:latest
+        imagePullPolicy: Always
+        
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        
+        envFrom:
+        - configMapRef:
+            name: kaiops-config
+        - secretRef:
+            name: kaiops-secrets
+        
+        env:
+        # JWT signing key injected from k8s Secret (see create-secrets.sh)
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: kaiops-secrets
+              key: jwt-secret-key
+        
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        
+        volumeMounts:
+        - name: gcp-credentials
+          mountPath: /var/secrets/gcp
+          readOnly: true
+      
+      volumes:
+      - name: gcp-credentials
+        secret:
+          secretName: gcp-credentials
+          optional: true
+      
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - kaiops-backend
+              topologyKey: kubernetes.io/hostname
+
+---
+# Backend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: kaiops-backend
+  namespace: kaiops
+  labels:
+    app: kaiops-backend
+spec:
+  type: LoadBalancer
+  selector:
+    app: kaiops-backend
+  ports:
+  - name: http
+    port: 8000
+    targetPort: http
+    protocol: TCP
+
+---
+# Frontend Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kaiops-frontend
+  namespace: kaiops
+  labels:
+    app: kaiops-frontend
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: kaiops-frontend
+  template:
+    metadata:
+      labels:
+        app: kaiops-frontend
+    spec:
+      securityContext:
+        runAsNonRoot: false
+        fsGroup: 101
+      
+      containers:
+      - name: frontend
+        image: gcr.io/carbon-relic-479214-c1/kaiops-frontend:latest
+        imagePullPolicy: Always
+        
+        ports:
+        - name: http
+          containerPort: 80
+          protocol: TCP
+        
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "250m"
+        
+        livenessProbe:
+          httpGet:
+            path: /index.html
+            port: http
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /index.html
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+
+---
+# Frontend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: kaiops-frontend
+  namespace: kaiops
+  labels:
+    app: kaiops-frontend
+spec:
+  type: LoadBalancer
+  selector:
+    app: kaiops-frontend
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+
+---
+# HorizontalPodAutoscaler for Backend
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: kaiops-backend-hpa
+  namespace: kaiops
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kaiops-backend
+  minReplicas: 1
+  maxReplicas: 1
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+# HorizontalPodAutoscaler for Frontend
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: kaiops-frontend-hpa
+  namespace: kaiops
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kaiops-frontend
+  minReplicas: 1
+  maxReplicas: 1
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 75
+
+---
+# Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kaiops-ingress
+  namespace: kaiops
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    kubernetes.io/ingress.class: "nginx"
+spec:
+  tls:
+  - hosts:
+    - kaiops.example.com
+    secretName: kaiops-tls
+  rules:
+  - host: kaiops.example.com
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: kaiops-backend
+            port:
+              number: 8000
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: kaiops-frontend
+            port:
+              number: 80

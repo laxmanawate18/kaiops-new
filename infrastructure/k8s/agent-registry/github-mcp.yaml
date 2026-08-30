@@ -1,0 +1,13 @@
+apiVersion: ai.google.cloud/v1alpha
+kind: MCPServer
+metadata:
+  name: github-mcp
+  description: "GitHub repository and code access tools"
+spec:
+  image: gcr.io/${PROJECT_ID}/github-mcp-server:latest
+  env:
+    - name: GITHUB_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: github-credentials
+          key: token
