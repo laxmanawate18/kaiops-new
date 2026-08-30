@@ -155,6 +155,11 @@ def claim_next_pending(worker_id: str) -> Optional[Dict[str, Any]]:
     Atomically claim the oldest PENDING job (-> RUNNING) using a Firestore
     transaction so multiple workers never pick up the same job. Returns the
     job dict or None if none available.
+
+    Failure tolerance (env-gated): each claim increments an ``attempts`` counter.
+    If ``attempts`` exceeds ``KAIOPS_JOB_MAX_ATTEMPTS`` (default 2), the job is
+    marked FAILED instead of being re-claimed, so a persistently-failing job
+    cannot loop forever.
     """
     client = FirestoreConfig.get_client()
     coll = _jobs_ref()
@@ -175,15 +180,28 @@ def claim_next_pending(worker_id: str) -> Optional[Dict[str, Any]]:
         current = ref.get()
         if not current.exists or current.get("status") != STATUS_PENDING:
             return None
+
+        # Bounded re-claims: if this job has already been attempted too many
+        # times, give up and move it to a terminal FAILED state.
+        max_attempts = int(os.environ.get("KAIOPS_JOB_MAX_ATTEMPTS", "2"))
+        attempts = int(current.get("attempts") or 0)
+        if attempts + 1 > max_attempts:
+            ref.update({"status": STATUS_FAILED, "error": "Max attempts exceeded",
+                        "updated_at": _now(), "completed_at": _now()})
+            logger.warning(f"[JOB] {doc.id} exceeded max attempts ({max_attempts}); marked FAILED")
+            return None
+
         ref.update({
             "status": STATUS_RUNNING,
             "worker_id": worker_id,
             "started_at": _now(),
             "updated_at": _now(),
+            "attempts": attempts + 1,
         })
         data = doc.to_dict()
         data["id"] = doc.id
-        logger.info(f"[JOB] Claimed {data['id']} by worker {worker_id}")
+        data["attempts"] = attempts + 1
+        logger.info(f"[JOB] Claimed {data['id']} by worker {worker_id} (attempt {attempts + 1})")
         return data
     except Exception as e:
         logger.warning(f"[JOB] Claim failed: {e}")

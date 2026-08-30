@@ -63,6 +63,13 @@ See [`docs/WEBHOOK_TRIGGER.md`](docs/WEBHOOK_TRIGGER.md) for the full cloud-awar
 trigger + remediation design, and [`docs/PHASE4_TEST_REPORT.md`](docs/PHASE4_TEST_REPORT.md)
 for the test rationale.
 
+**Failure tolerance:** the worker claims a `PENDING` job via a status-guarded
+compare-and-swap so no two workers ever execute the same job (no double-claim).
+Each agent run is bounded by a job timeout (`KAIOPS_JOB_TIMEOUT_SECONDS`, default
+900s) and a bounded number of re-claims (`KAIOPS_JOB_MAX_ATTEMPTS`, default 2);
+on timeout or a persistent failure the job is moved to the terminal `FAILED`
+state rather than looping forever.
+
 ---
 
 ## Repository Structure (as it is)

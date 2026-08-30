@@ -11,6 +11,7 @@ job, runs the agent, and stores the result, all without a human initiating it.
 
 import os
 import uuid
+import asyncio
 import logging
 from typing import Any, Dict, Optional
 
@@ -62,11 +63,13 @@ async def run_job(job: Dict[str, Any], session_service: VertexFirestoreSessionSe
                 logger.warning(f"[JOB] tag session app_name failed: {tag_err}")
 
         # Run the agent. This reuses the exact ADK runner wiring already
-        # validated by the interactive chat path.
+        # validated by the interactive chat path. Bounded by a timeout so a
+        # hung/long agent run cannot wedge the worker loop (env-gated).
         from app.chat.agent_service import process_message
 
         logger.info(f"[JOB] Executing {job_id}: {prompt[:80]}...")
-        result = await process_message(
+        job_timeout = int(os.environ.get("KAIOPS_JOB_TIMEOUT_SECONDS", "900"))
+        process_coro = process_message(
             message=prompt,
             session_id=session_id,
             user_id=SYSTEM_USER_ID,
@@ -78,6 +81,32 @@ async def run_job(job: Dict[str, Any], session_service: VertexFirestoreSessionSe
                 "job_id": job_id,
             },
         )
+        try:
+            result = await asyncio.wait_for(process_coro, timeout=job_timeout)
+        except asyncio.TimeoutError:
+            logger.error(f"[JOB] {job_id} timed out after {job_timeout}s; marking FAILED")
+            jobs.mark_failed(job_id, f"Job timed out after {job_timeout}s")
+            return {
+                "response": f"Autonomous investigation timed out after {job_timeout}s.",
+                "reasoning_steps": [],
+                "requires_confirmation": False,
+                "pending_tool": None,
+                "approval_token": None,
+                "success": False,
+                "error": f"timeout:{job_timeout}s",
+            }
+        except Exception as exec_err:
+            logger.error(f"[JOB] {job_id} execution failed: {exec_err}", exc_info=True)
+            jobs.mark_failed(job_id, str(exec_err))
+            return {
+                "response": f"Autonomous investigation failed: {exec_err}",
+                "reasoning_steps": [],
+                "requires_confirmation": False,
+                "pending_tool": None,
+                "approval_token": None,
+                "success": False,
+                "error": str(exec_err),
+            }
 
         response = result.get("response", "")
         meta = result.get("metadata", {}) or {}
