@@ -175,6 +175,46 @@ async def deploy_webhook(
     }
 
 
+@router.post("/webhooks/watch", include_in_schema=False)
+async def watch_cluster_events(
+    authorization: Optional[str] = Header(default=None),
+    lookback_seconds: int = Query(default=300, ge=60, le=3600),
+    namespace: str = Query(default=""),
+    application: str = Query(default=""),
+    severity: str = Query(default="P1"),
+):
+    """Scan cluster Events for crash conditions and auto-trigger the webhook.
+
+    This is the "auto-trigger on a failed/crashed deploy" driver. It should be
+    scheduled (Cloud Scheduler cron / Cloud Run job) to periodically scan
+    CoreV1 Events and POST normalized payloads to /webhooks/deploy for new
+    CrashLoopBackOff / ImagePullBackOff / OOMKilled / FailedScheduling events.
+
+    - Auth: Bearer KAI_OPS_DEPLOY_WEBHOOK_TOKEN (same secret as the webhook).
+    - Reuses agents.k8s_crash_watcher.watch_for_crash_events, which is
+      cloud-aware (GKE/EKS/AKS) and dedupes identical events.
+    """
+    _require_deploy_token(authorization)
+    from agents.k8s_crash_watcher import watch_for_crash_events
+    try:
+        # In-process: empty webhook_url => watcher creates jobs directly in
+        # Firestore (mirrors the HTTP /webhooks/deploy path, incl. dedupe).
+        summary = await asyncio.to_thread(
+            watch_for_crash_events,
+            webhook_url="",
+            token="",
+            lookback_seconds=lookback_seconds,
+            namespace=namespace,
+            application=application,
+            severity=severity,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"[WATCH] scan failed: {e}", exc_info=True)
+        return {"status": "error", "error": str(e)}
+
+    return {"status": "ok", **summary}
+
+
 @router.post("/ingest")
 async def ingest(
     request: IngestRequest,
