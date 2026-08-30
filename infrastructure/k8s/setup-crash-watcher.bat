@@ -36,7 +36,7 @@ set URL=%BACKEND_URL%/api/v1/runtime/webhooks/watch
 set OIDC_SA=275388304596-compute@developer.gserviceaccount.com
 
 echo Creating/updating Cloud Scheduler job [%JOB_NAME%] to call %URL% every 2 min...
-call gcloud scheduler jobs update http %JOB_NAME% ^
+call gcloud --quiet scheduler jobs update http %JOB_NAME% ^
     --project=%PROJECT_ID% ^
     --location=us-central1 ^
     --schedule="%SCHEDULE%" ^
@@ -47,7 +47,7 @@ call gcloud scheduler jobs update http %JOB_NAME% ^
     --oidc-token-audience="%URL%" 2>nul
 if %errorlevel% neq 0 (
     echo   job did not exist; creating...
-    call gcloud scheduler jobs create http %JOB_NAME% ^
+    call gcloud --quiet scheduler jobs create http %JOB_NAME% ^
         --project=%PROJECT_ID% ^
         --location=us-central1 ^
         --schedule="%SCHEDULE%" ^
