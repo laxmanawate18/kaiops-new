@@ -288,15 +288,24 @@ async def _handle_failure(app_name: str, state: Dict[str, Any]) -> None:
     except Exception as e:  # noqa: BLE001
         logger.error(f"[ARGOCD] create job failed: {e}")
 
-    # Post the Slack alert: parent thread = status header + session link.
+    # Post the Slack alert: parent thread = status header + details + session link.
     # The detailed RCA is appended as a subthread reply when the worker completes.
     session_link = f"{FRONTEND_URL}/console/runtime-{job_id}" if job_id else ""
+    details = {
+        "cloud_provider": provider,
+        "cluster": os.environ.get("GKE_CLUSTER_NAME", ""),
+        "namespace": "kaiops-demo",
+        "health": state.get("health"),
+        "sync": state.get("sync"),
+        "env": "production",
+    }
     try:
         await report_app_status(
             app_name=app_name, status="Failed",
             detail=f"ArgoCD health: *{state.get('health')}* | sync: *{state.get('sync')}*.\n"
                    f"RCA in progress — the full report will follow in this thread.",
-            cloud_provider=provider, session_link=session_link,
+            cloud_provider=provider,
+            session_link=session_link, details=details,
         )
     except Exception as e:  # noqa: BLE001
         logger.error(f"[ARGOCD] Slack report failed: {e}")
@@ -306,7 +315,16 @@ async def _handle_healthy(app_name: str, state: Dict[str, Any]) -> None:
     """Post/reply a healthy deploy confirmation in the app's thread."""
     from app.slack.reporter import report_app_status
     logger.info(f"[ARGOCD] HEALTHY: {app_name} health={state['health']} sync={state['sync']}")
+    details = {
+        "cluster": os.environ.get("GKE_CLUSTER_NAME", ""),
+        "namespace": "kaiops-demo",
+        "env": "production",
+    }
     try:
-        await report_app_status(app_name=app_name, status="Healthy", detail="Application deployed successfully.", cloud_provider="gcp")
+        await report_app_status(
+            app_name=app_name, status="Healthy",
+            detail="✅ Application deployed successfully.",
+            cloud_provider="gcp", details=details,
+        )
     except Exception as e:  # noqa: BLE001
         logger.error(f"[ARGOCD] healthy report failed: {e}")

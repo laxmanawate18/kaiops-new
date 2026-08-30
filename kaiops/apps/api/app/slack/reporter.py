@@ -111,22 +111,78 @@ def _send(msg_payload: dict) -> Optional[str]:
         return None
 
 
-def _ensure_thread(app_name: str, status: str, channel: str) -> str:
-    """Create the parent thread message if none exists; return the parent thread_ts.
+def _details_blocks(details: dict) -> list:
+    """Build a details section (cluster, cloud provider, namespace, etc.)."""
+    if not details:
+        return []
+    lines = []
+    labels = {
+        "cluster": "🌐 Cluster", "cloud_provider": "☁️ Cloud", "namespace": "📦 Namespace",
+        "env": "🌍 Env", "app": "📱 App", "sync": "🔄 Sync", "health": "❤️ Health",
+        "repo": "📌 Repo", "revision": "🔖 Revision", "owner": "👤 Owner",
+    }
+    for k, v in details.items():
+        if v is None or str(v).strip() == "":
+            continue
+        label = labels.get(k, k.replace("_", " ").title())
+        lines.append(f"*{label}:* {v}")
+    if not lines:
+        return []
+    return [{"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(lines)}}]
 
-    The parent is the status header (``[App_Name] Healthy|Failed``). If a thread
-    already exists for this app, its parent ts is reused (so updates stay threaded).
+
+def _send_update(channel: str, ts: str, blocks: list) -> bool:
+    """Edit an existing Slack message (chat.update). Returns success."""
+    import requests
+    try:
+        resp = requests.post(
+            "https://slack.com/api/chat.update",
+            json={"channel": channel, "ts": ts, "blocks": blocks},
+            headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"}, timeout=15,
+        )
+        data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+        if resp.status_code == 200 and data.get("ok"):
+            return True
+        logger.error(f"[SLACK] chat.update failed: {data.get('error', data)}")
+        return False
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"[SLACK] update error: {e}")
+        return False
+
+
+def _ensure_thread(app_name: str, status: str, channel: str, details: dict = None) -> str:
+    """Create/repair the parent thread message; return the parent thread_ts.
+
+    - If no thread exists: creates the parent ``[App_Name] Healthy|Failed`` header
+      + a details section.
+    - If a thread exists but has a stale/legacy header (e.g. `[❌ Failed]` without
+      the app name, or a `[FAIL]` content), it is repaired to the correct format.
     """
     existing_ts = _get_thread_ts(app_name)
     if existing_ts:
+        # Best-effort repair of a stale parent header to the correct `[App_Name]` format.
+        try:
+            blocks = [
+                {"type": "header", "text": {"type": "plain_text",
+                                            "text": f"[{app_name}] {'✅ Healthy' if status == 'Healthy' else '❌ Failed'}",
+                                            "emoji": True}},
+                {"type": "section", "text": {"type": "mrkdwn",
+                                             "text": f"*{app_name}* deployment status"}},
+            ]
+            blocks.extend(_details_blocks(details or {}))
+            _send_update(channel, existing_ts, blocks)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[SLACK] thread repair failed: {e}")
         return existing_ts
     blocks = [
         {"type": "header", "text": {"type": "plain_text",
-                                    "text": f"[{'✅ Healthy' if status == 'Healthy' else '❌ Failed'}] {app_name}",
+                                    "text": f"[{app_name}] {'✅ Healthy' if status == 'Healthy' else '❌ Failed'}",
                                     "emoji": True}},
-        {"type": "section", "text": {"type": "mrkdwn", "text": f"*{app_name}* deployment status"}},
+        {"type": "section", "text": {"type": "mrkdwn",
+                                     "text": f"*{app_name}* deployment status"}},
     ]
-    parent_ts = _send({"channel": channel, "text": f"[{status}] {app_name}", "blocks": blocks})
+    blocks.extend(_details_blocks(details or {}))
+    parent_ts = _send({"channel": channel, "text": f"[{app_name}] {status}", "blocks": blocks})
     if parent_ts:
         _save_thread_ts(app_name, parent_ts)
     return parent_ts or ""
@@ -134,10 +190,12 @@ def _ensure_thread(app_name: str, status: str, channel: str) -> str:
 
 async def report_app_status(app_name: str, status: str, detail: str = "",
                             cloud_provider: str = "gcp", is_infra: bool = False,
-                            session_link: str = "", hitl_action_id: str = "") -> str:
+                            session_link: str = "", hitl_action_id: str = "",
+                            details: dict = None) -> str:
     """Report app deployment status to the per-application Slack thread.
 
-    - Creates the **parent thread** with the ``[App_Name] Healthy|Failed`` header.
+    - Creates the **parent thread** with the ``[App_Name] Healthy|Failed`` header
+      + a details section (cluster, cloud provider, namespace...).
     - Posts the **RCA detail as a subthread reply**, with the session link + SRE tag
       + Approve/Reject buttons (if ``hitl_action_id`` set).
 
@@ -152,7 +210,7 @@ async def report_app_status(app_name: str, status: str, detail: str = "",
         logger.warning("[SLACK] no channel configured")
         return ""
 
-    parent_ts = _ensure_thread(app_name, status, channel)
+    parent_ts = _ensure_thread(app_name, status, channel, details or {})
     # Detail goes in a subthread reply so the parent stays as the clean status header.
     blocks = _blocks(status, detail, session_link, is_infra, hitl_action_id)
     text = f"{app_name}: {status}"
@@ -161,7 +219,7 @@ async def report_app_status(app_name: str, status: str, detail: str = "",
         blocks = _blocks(status, detail, session_link, is_infra, hitl_action_id)
 
     try:
-        resp = _send({"channel": channel, "text": f"[{status}] {app_name} — RCA",
+        resp = _send({"channel": channel, "text": f"[{app_name}] {status} — RCA",
                       "blocks": blocks, **({"thread_ts": parent_ts} if parent_ts else {})})
         if resp:
             logger.info(f"[SLACK] posted {status} report for {app_name} @ {resp} (thread={parent_ts})")
