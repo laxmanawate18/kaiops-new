@@ -290,9 +290,29 @@ class VertexFirestoreSessionService(BaseSessionService):
         }
         self.sessions_ref.document(canonical_id).set(session_data)
         return dict(session_data)
+
+    def get_api_session(self, user_id: str, session_id: str, allow_runtime: bool = False) -> Optional[Dict[str, Any]]:
+        doc = self.sessions_ref.document(session_id).get()
+        if not doc.exists:
+            return None
+        data = _normalize_record(doc.to_dict())
+        # Runtime (autonomous worker) sessions are owned by the synthetic system
+        # user. Admins/team-leads are allowed to open them read-only so the Slack
+        # console deep-link works. Note this does NOT grant message-write access.
+        owner = data.get("user_id")
+        if owner != user_id and not (allow_runtime and owner == SYSTEM_RUNTIME_USER_ID):
+            return None
+        if "id" not in data:
+            data["id"] = doc.id
+        return data
+
+    def update_session(self, user_id: str, session_id: str, **kwargs) -> Optional[Dict[str, Any]]:
+        doc_ref = self.sessions_ref.document(session_id)
+        doc = doc_ref.get()
+
         if not doc.exists or doc.to_dict().get("user_id") != user_id:
             return None
-            
+
         updates = {"last_modified": datetime.now(timezone.utc).isoformat()}
         if "name" in kwargs:
             updates["name"] = kwargs["name"]
@@ -300,7 +320,7 @@ class VertexFirestoreSessionService(BaseSessionService):
             updates["is_active"] = kwargs["is_active"]
         if "metadata" in kwargs:
             updates["metadata"] = kwargs["metadata"]
-            
+
         doc_ref.update(updates)
         return self.get_api_session(user_id, session_id)
 
