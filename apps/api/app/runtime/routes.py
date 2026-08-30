@@ -215,6 +215,32 @@ async def watch_cluster_events(
     return {"status": "ok", **summary}
 
 
+@router.post("/argocd/check", include_in_schema=False)
+async def argocd_check(
+    authorization: Optional[str] = Header(default=None),
+    application: str = Query(default=""),
+    dry_run: bool = Query(default=False),
+):
+    """Poll ArgoCD Application health/sync and trigger the closed loop.
+
+    Reads ArgoCD status via the MCP server (already-authenticated). On a
+    transition to Failed/Degraded/OutOfSync -> creates an RCA job + Slack alert.
+    On Healthy -> replies a "deploy OK" update in the app thread.
+
+    - Auth: Bearer KAI_OPS_DEPLOY_WEBHOOK_TOKEN (same as webhook, fail-closed).
+    - ``application``: check a single app; empty = all ArgoCD apps.
+    - ``dry_run``: log only, don't create jobs/Slack (safe to test).
+    """
+    _require_deploy_token(authorization)
+    from agents.argocd_health import check_and_trigger
+    try:
+        summary = await check_and_trigger(application=application, dry_run=dry_run)
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"[ARGOCD] check failed: {e}", exc_info=True)
+        return {"status": "error", "error": str(e)}
+    return {"status": "ok", **summary}
+
+
 @router.post("/ingest")
 async def ingest(
     request: IngestRequest,
