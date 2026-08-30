@@ -130,3 +130,7 @@ desktop.ini
 
 # CI log artifacts (contain GitHub token patterns)
 _ci_logs*.zip
+
+# Auto-generated graph outputs + one-shot scratch scripts (regenerated/discarded)
+graphify-out/
+apps/api/scratch/
