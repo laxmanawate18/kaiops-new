@@ -2,8 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies + AWS CLI (for EKS token minting) and
+# the Azure CLI + Azure containerservice SDK deps (for AKS creds).
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     curl \
@@ -13,6 +14,9 @@ RUN apt-get update && apt-get install -y \
     libffi-dev \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# AWS CLI v2 (pip) for `aws eks get-token`
+RUN pip install --no-cache-dir awscli
 
 # Upgrade pip
 RUN pip install --upgrade pip setuptools wheel
@@ -36,9 +40,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Expose port
 EXPOSE 8000
-
-# Run application
-CMD ["python", "run_server.py"]
 
 # Run application
 CMD ["python", "run_server.py"]
