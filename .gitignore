@@ -127,3 +127,6 @@ desktop.ini
 # Cloud Run / gcloud temp
 .gcloudignore
 .DS_Store
+
+# CI log artifacts (contain GitHub token patterns)
+_ci_logs*.zip
