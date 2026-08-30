@@ -332,8 +332,18 @@ async def approve_action_endpoint(
     if not record:
         raise HTTPException(status_code=404, detail="No pending action for this token")
     # Deliberately uniform 404 for any binding mismatch: avoids leaking token
-    # existence and removes the earlier asymmetric 403-vs-404 behavior.
-    if record.get("session_id") != session_id or record.get("user_id") != current_user.id:
+    # existence and removes the earlier asymmetric 403-vs-404 behavior. For
+    # autonomous (runtime) actions owned by the synthetic worker user, admins /
+    # team-leads are allowed to approve on the operator's behalf.
+    record_owner = record.get("user_id")
+    runtime_owner = __import__("app.chat.custom_session_service", fromlist=["SYSTEM_RUNTIME_USER_ID"]).SYSTEM_RUNTIME_USER_ID
+    binding_ok = (
+        record.get("session_id") == session_id
+        and (record_owner == current_user.id
+             or (record_owner == runtime_owner
+                 and current_user.role in (UserRole.ADMIN, UserRole.TEAM_LEAD)))
+    )
+    if not binding_ok:
         raise HTTPException(status_code=404, detail="No pending action for this token")
 
     tool_name = record.get("tool_name")

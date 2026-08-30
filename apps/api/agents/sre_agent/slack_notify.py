@@ -27,12 +27,44 @@ SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "")
 SLACK_CHANNEL = os.getenv("SLACK_CHANNEL", "")
 SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", "")
 
+# The synthetic user that owns autonomous (worker/runtime) sessions.
+SYSTEM_USER_ID = os.environ.get("KAIOPS_RUNTIME_USER", "sre-agent-runtime")
+
 # Map a posted message's slack_ts -> pending_action_id so a button click can be
 # resolved. In-process (mirrors pending_actions pattern); a Slack interaction
 # arrives in a fresh request, so we persist this in Firestore via pending_actions.
 # See app.slack.interactions for the resolver.
 _ts_to_action: dict = {}
 _ts_lock = __import__("threading").Lock()
+
+
+def _post_blocks_payload(payload: dict, channel: str = "") -> str:
+    """Post a fully-formed chat.postMessage payload (supports ``thread_ts``).
+
+    Returns the message ts on success, else "".
+    """
+    token = os.getenv("SLACK_BOT_TOKEN", "")
+    if not token:
+        return ""
+    payload.setdefault("channel", channel or SLACK_CHANNEL or SLACK_CHANNEL_ID)
+    if not payload.get("channel"):
+        return ""
+    try:
+        resp = requests.post(
+            "https://slack.com/api/chat.postMessage",
+            json=payload,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15,
+        )
+        data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+        if resp.status_code == 200 and data.get("ok"):
+            logger.info(f"[SLACK] Posted payload to channel={payload.get('channel')} thread={payload.get('thread_ts')}")
+            return data.get("ts", "")
+        logger.error(f"[SLACK] chat.postMessage failed {resp.status_code}: {data.get('error', data)[:200]}")
+        return ""
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"[SLACK] chat.postMessage error: {e}")
+        return ""
 
 
 def _post_blocks(blocks, channel: str = "", text: str = "") -> str:
@@ -197,11 +229,51 @@ def post_hitl_approval(session_id: str, user_id: str, tool_name: str, approval_t
             ],
         },
     ]
-    ts = _post_blocks(blocks, channel=channel, text=f"KaiOps HITL: {tool_name}")
+
+    # Post the HITL card INSIDE the app's thread (under the `[App_Name] Failed`
+    # parent) when the session resolves to a known application. This prevents the
+    # approve/reject card from appearing as a scattered standalone message and
+    # keeps the whole incident in one thread.
+    payload = {"channel": channel, "text": f"KaiOps HITL: {tool_name}", "blocks": blocks}
+    try:
+        from app.slack.reporter import _get_thread_ts
+        parent_ts = _get_thread_ts(session_id) or _resolve_app_thread(session_id)
+        if parent_ts:
+            payload["thread_ts"] = parent_ts
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[SLACK] thread lookup failed for {session_id}: {e}")
+
+    ts = _post_blocks_payload(payload, channel=channel)
     if ts:
         register_action_button(ts, approval_token)
         return ts
     return ""
+
+
+def _resolve_app_thread(session_id: str) -> str:
+    """Best-effort: resolve a session_id to its app_name -> Slack thread_ts.
+
+    The worker's runtime sessions carry an ``application_name`` stamp; autonomous
+    job sessions use the ``runtime-kaiops-{app}`` canonical id. We map the
+    session to the app so the HITL card threads under the app's parent message.
+    """
+    try:
+        from app.chat.agent_service import get_session_service
+        svc = get_session_service()
+        app_name = None
+        # Canonical app session id: runtime-kaiops-{app_name}
+        if session_id.startswith("runtime-kaiops-"):
+            app_name = session_id[len("runtime-kaiops-"):]
+        else:
+            data = svc.get_api_session(SYSTEM_USER_ID, session_id, allow_runtime=True)
+            app_name = (data or {}).get("application_name") or ""
+        if not app_name:
+            return ""
+        from app.slack.reporter import _get_thread_ts
+        return _get_thread_ts(app_name) or ""
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[SLACK] _resolve_app_thread failed: {e}")
+        return ""
 
 
 __all__ = ["notify_slack", "register_action_button", "post_hitl_approval"]
