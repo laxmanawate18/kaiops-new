@@ -204,25 +204,54 @@ class VertexFirestoreSessionService(BaseSessionService):
 
         return sorted(sessions, key=_sort_key, reverse=True)
 
-    def get_api_session(self, user_id: str, session_id: str, allow_runtime: bool = False) -> Optional[Dict[str, Any]]:
-        doc = self.sessions_ref.document(session_id).get()
-        if not doc.exists:
-            return None
-        data = _normalize_record(doc.to_dict())
-        # Runtime (autonomous worker) sessions are owned by the synthetic system
-        # user. Admins/team leads are allowed to open them read-only so the Slack
-        # console deep-link works. Note this does NOT grant message-write access.
-        owner = data.get("user_id")
-        if owner != user_id and not (allow_runtime and owner == SYSTEM_RUNTIME_USER_ID):
-            return None
-        if "id" not in data:
-            data["id"] = doc.id
-        return data
+    def get_runtime_sessions(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Return the autonomous (worker) sessions owned by the synthetic runtime
+        user, newest-first. Admins/team-leads see these so the RCA console
+        deep-links and the left panel show the actual investigations."""
+        query = self.sessions_ref.where("user_id", "==", SYSTEM_RUNTIME_USER_ID)
+        sessions = []
+        for doc in query.stream():
+            data = _normalize_record(doc.to_dict())
+            if "id" not in data:
+                data["id"] = doc.id
+            sessions.append(data)
 
-    def update_session(self, user_id: str, session_id: str, **kwargs) -> Optional[Dict[str, Any]]:
-        doc_ref = self.sessions_ref.document(session_id)
-        doc = doc_ref.get()
-        
+        def _sort_key(session: Dict[str, Any]) -> str:
+            value = session.get("last_modified", "")
+            if hasattr(value, "isoformat"):
+                return value.isoformat()
+            return str(value or "")
+
+        return sorted(sessions, key=_sort_key, reverse=True)[:limit]
+
+    def get_runtime_session_for_app(self, app_name: str) -> Optional[Dict[str, Any]]:
+        """Return the most recent runtime session tagged for a given app, or None.
+
+        Used by the Healthy path to build a real console deep-link to the app's
+        latest RCA conversation (instead of a fabricated session id).
+        """
+        if not app_name:
+            return None
+        try:
+            query = self.sessions_ref.where("user_id", "==", SYSTEM_RUNTIME_USER_ID)
+            best = None
+            for doc in query.stream():
+                data = _normalize_record(doc.to_dict())
+                data.setdefault("id", doc.id)
+                if data.get("application_name") != app_name:
+                    continue
+                if best is None:
+                    best = data
+                    continue
+                # keep the newest
+                best_ts = best.get("last_modified", "")
+                curr_ts = data.get("last_modified", "")
+                if curr_ts > best_ts:
+                    best = data
+            return best
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[SESSION] resolve runtime session for {app_name} failed: {e}")
+            return None
         if not doc.exists or doc.to_dict().get("user_id") != user_id:
             return None
             

@@ -53,6 +53,13 @@ async def get_sessions(
             user_id=current_user.id,
             include_inactive=include_inactive
         )
+        # Admins/team-leads also see the autonomous (RCA/runtime) sessions that the
+        # background worker created. These are surfaced in the left panel so the
+        # Slack console deep-links resolve to a real conversation instead of 404.
+        if current_user.role in (UserRole.ADMIN, UserRole.TEAM_LEAD):
+            runtime = _get_db().get_runtime_sessions(limit=50)
+            seen = {s.get("id") for s in sessions}
+            sessions = sessions + [s for s in runtime if s.get("id") not in seen]
         return GetSessionsResponse(
             sessions=[ChatSession(**s) for s in sessions],
             total=len(sessions)

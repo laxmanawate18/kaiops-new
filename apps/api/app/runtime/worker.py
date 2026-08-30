@@ -39,9 +39,12 @@ async def run_job(job: Dict[str, Any], session_service: VertexFirestoreSessionSe
     # Every job gets its own ADK session so memory stays isolated and the
     # reasoning chain is attributable to this specific investigation.
     session_id = f"runtime-{job_id}"
+    app_name = (job.get("metadata") or {}).get("argocd_app") or (job.get("metadata") or {}).get("application") or ""
 
     try:
-        # Ensure an ADK session exists for the synthetic user.
+        # Ensure an ADK session exists for the synthetic user. Tag it with the
+        # application name so the Healthy path can resolve a real console link
+        # (the app's latest RCA session) instead of a fabricated one.
         existing = await session_service.get_session(
             app_name="kaiops", user_id=SYSTEM_USER_ID, session_id=session_id
         )
@@ -49,6 +52,14 @@ async def run_job(job: Dict[str, Any], session_service: VertexFirestoreSessionSe
             await session_service.create_session(
                 app_name="kaiops", user_id=SYSTEM_USER_ID, session_id=session_id
             )
+            # Stamp the app name on the session doc so /console resolution works.
+            try:
+                from app.database.firestore_config import FirestoreConfig
+                FirestoreConfig.get_client().collection("chat_sessions").document(session_id).update(
+                    {"application_name": app_name, "session_type": "runtime"}
+                )
+            except Exception as tag_err:  # noqa: BLE001
+                logger.warning(f"[JOB] tag session app_name failed: {tag_err}")
 
         # Run the agent. This reuses the exact ADK runner wiring already
         # validated by the interactive chat path.
