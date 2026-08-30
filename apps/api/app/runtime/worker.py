@@ -76,6 +76,29 @@ async def run_job(job: Dict[str, Any], session_service: VertexFirestoreSessionSe
         pending_tool = meta.get("pending_tool")
         approval_token = meta.get("approval_token")
 
+        # Persist the RCA conversation (user prompt + assistant report) as chat
+        # messages so the console deep-link (/console/runtime-{job_id}) shows the
+        # actual investigation instead of an empty conversation. The worker owns
+        # this session (SYSTEM_USER_ID), so add_message's ownership check passes.
+        try:
+            from app.chat.models import MessageSender
+            session_service.add_message(
+                user_id=SYSTEM_USER_ID, session_id=session_id,
+                sender=MessageSender.USER, text=prompt,
+                metadata={"autonomous": True, "source": job.get("source", "runtime")},
+            )
+            if response:
+                session_service.add_message(
+                    user_id=SYSTEM_USER_ID, session_id=session_id,
+                    sender=MessageSender.ASSISTANT, text=response,
+                    metadata={"autonomous": True, "source": job.get("source", "runtime"),
+                              "requires_confirmation": requires_confirmation,
+                              "approval_token": approval_token, "pending_tool": pending_tool},
+                )
+            logger.info(f"[JOB] Persisted {job_id} conversation to chat_messages")
+        except Exception as msgerr:  # noqa: BLE001
+            logger.warning(f"[JOB] persist chat messages failed: {msgerr}")
+
         report = {
             "response": response,
             "reasoning_steps": reasoning_steps,
