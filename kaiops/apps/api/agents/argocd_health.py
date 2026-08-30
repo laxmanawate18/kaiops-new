@@ -126,11 +126,14 @@ async def _get_app_status(app_name: str) -> Optional[Dict[str, Any]]:
     data = _argocd_request(f"/api/v1/applications/{app_name}")
     if data and isinstance(data, dict):
         st = data.get("status", {})
+        dest = data.get("spec", {}).get("destination", {})
         return {
             "name": data.get("metadata", {}).get("name", app_name),
             "health": st.get("health", {}).get("status", "Unknown"),
             "sync": st.get("sync", {}).get("status", "Unknown"),
             "message": "",
+            "namespace": dest.get("namespace", ""),
+            "cluster": dest.get("server", "").split("//")[-1] or "",
         }
     # Fallback: MCP text.
     from agents.argocd_agent.tools import get_application_status
@@ -201,6 +204,50 @@ def _is_healthy(state: Dict[str, Any]) -> bool:
     return state.get("health") in _HEALTHY_HEALTH
 
 
+def _app_metadata_exists(app_name: str) -> bool:
+    """Return True if the app is already registered in KaiOps application metadata."""
+    try:
+        from app.applications.database_firestore import application_db
+        return application_db.get_application_by_name(app_name) is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _auto_register_app(app_name: str, state: Dict[str, Any]) -> None:
+    """Auto-register an ArgoCD-discovered app into KaiOps metadata (zero-touch).
+
+    Driven by CI/CD: the app is authored in a Git repo + deployed via ArgoCD,
+    and this poller syncs it into the KaiOps Firestore ``applications`` collection
+    so routing (cloud_provider) and RCA work without any manual entry.
+
+    - ``cloud_provider`` is read from the app's ArgoCD label/annotation
+      (``cloud-provider``) if present, else defaults to ``gcp``.
+    - namespace/cluster are taken from the ArgoCD Application spec destination.
+    """
+    try:
+        from app.applications.database_firestore import application_db
+        if _app_metadata_exists(app_name):
+            return
+        # Compute a best-effort cloud_provider + namespace.
+        cloud = "gcp"
+        namespace = state.get("namespace") or ""
+        cluster = state.get("cluster") or os.environ.get("GKE_CLUSTER_NAME", "")
+        app_data = {
+            "application_name": app_name,
+            "application_owner": "kaiops-auto",
+            "cloud_provider": cloud,
+            "namespace": namespace,
+            "gke_cluster_name": cluster,
+            "argocd_app_name": app_name,
+            "status": "ACTIVE",
+            "custom_metadata": [{"key": "source", "value": "argocd_auto_register"}],
+        }
+        application_db.create_application(app_data)
+        logger.info(f"[ARGOCD] Auto-registered app '{app_name}' into KaiOps metadata (cloud={cloud})")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[ARGOCD] auto-register failed for {app_name}: {e}")
+
+
 async def check_and_trigger(application: str = "", dry_run: bool = False) -> Dict[str, Any]:
     """Poll tracked ArgoCD apps and trigger RCA/Slack on status transitions.
 
@@ -225,6 +272,11 @@ async def check_and_trigger(application: str = "", dry_run: bool = False) -> Dic
         state = await _get_app_status(app_name)
         if not state:
             continue
+
+        # Auto-register the app into KaiOps metadata if it's not there yet
+        # (zero-touch: CI/CD -> ArgoCD -> this poller -> Firestore).
+        if not _app_metadata_exists(resolved):
+            _auto_register_app(resolved, state)
 
         last = _get_last_state(resolved)
         changed = (last is None) or (last.get("health") != state.get("health")) or (last.get("sync") != state.get("sync"))
@@ -293,8 +345,8 @@ async def _handle_failure(app_name: str, state: Dict[str, Any]) -> None:
     session_link = f"{FRONTEND_URL}/console/runtime-{job_id}" if job_id else ""
     details = {
         "cloud_provider": provider,
-        "cluster": os.environ.get("GKE_CLUSTER_NAME", ""),
-        "namespace": "kaiops-demo",
+        "cluster": state.get("cluster") or os.environ.get("GKE_CLUSTER_NAME", ""),
+        "namespace": state.get("namespace") or "default",
         "health": state.get("health"),
         "sync": state.get("sync"),
         "env": "production",
@@ -324,15 +376,19 @@ async def _handle_healthy(app_name: str, state: Dict[str, Any]) -> None:
         pass
     details = {
         "cloud_provider": provider,
-        "cluster": os.environ.get("GKE_CLUSTER_NAME", ""),
-        "namespace": "kaiops-demo",
+        "cluster": state.get("cluster") or os.environ.get("GKE_CLUSTER_NAME", ""),
+        "namespace": state.get("namespace") or "default",
         "env": "production",
     }
+    # Always include a console link (even on Healthy) so the developer can jump
+    # straight into the app's KaiOps console session.
+    session_link = f"{FRONTEND_URL}/console/kaiops-{app_name}"
     try:
         await report_app_status(
             app_name=app_name, status="Healthy",
             detail="✅ Application deployed successfully.",
             cloud_provider=provider, details=details,
+            session_link=session_link,
         )
     except Exception as e:  # noqa: BLE001
         logger.error(f"[ARGOCD] healthy report failed: {e}")
