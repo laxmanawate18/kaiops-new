@@ -278,6 +278,15 @@ async def check_and_trigger(application: str = "", dry_run: bool = False) -> Dic
         if not _app_metadata_exists(resolved):
             _auto_register_app(resolved, state)
 
+        # Always ensure the app has a real, resolvable KaiOps console session
+        # (runtime-kaiops-{app_name}) so the Slack "Open console" deep-link never
+        # 404s, even when there's no status transition to report.
+        try:
+            from app.chat.agent_service import get_session_service
+            get_session_service().ensure_app_session(app_name)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[ARGOCD] ensure_app_session for {app_name} failed: {e}")
+
         last = _get_last_state(resolved)
         changed = (last is None) or (last.get("health") != state.get("health")) or (last.get("sync") != state.get("sync"))
 
