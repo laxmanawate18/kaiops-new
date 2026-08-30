@@ -272,6 +272,7 @@ async def _handle_failure(app_name: str, state: Dict[str, Any]) -> None:
         "After the RCA, send the summary to Slack with the status header "
         "[App_Name] Failed and tag SRE team if it is infra-related."
     )
+    job_id = ""
     try:
         job = job_store.create_job(
             source="argocd_poller",
@@ -282,16 +283,20 @@ async def _handle_failure(app_name: str, state: Dict[str, Any]) -> None:
                       "health": state.get("health"), "sync": state.get("sync"),
                       "incident_type": incident_type},
         )
-        logger.info(f"[ARGOCD] Created job {job['id']} for {app_name}")
+        job_id = job["id"]
+        logger.info(f"[ARGOCD] Created job {job_id} for {app_name}")
     except Exception as e:  # noqa: BLE001
         logger.error(f"[ARGOCD] create job failed: {e}")
 
-    # Post the Slack alert (reporter creates/replies to per-app thread).
+    # Post the Slack alert: parent thread = status header + session link.
+    # The detailed RCA is appended as a subthread reply when the worker completes.
+    session_link = f"{FRONTEND_URL}/console/runtime-{job_id}" if job_id else ""
     try:
         await report_app_status(
-            app_name=app_name, status="Failed", detail=state.get("message", ""),
-            cloud_provider=provider,
-            session_link=f"{FRONTEND_URL}/console/runtime-{job.get('id')}" if job.get("id") else "",
+            app_name=app_name, status="Failed",
+            detail=f"ArgoCD health: *{state.get('health')}* | sync: *{state.get('sync')}*.\n"
+                   f"RCA in progress — the full report will follow in this thread.",
+            cloud_provider=provider, session_link=session_link,
         )
     except Exception as e:  # noqa: BLE001
         logger.error(f"[ARGOCD] Slack report failed: {e}")

@@ -94,6 +94,28 @@ async def run_job(job: Dict[str, Any], session_service: VertexFirestoreSessionSe
             logger.info(f"[JOB] {job_id} complete ({len(response)} chars, {len(reasoning_steps)} steps)")
             jobs.mark_complete(job_id, report)
 
+        # For ArgoCD-poller jobs, post the detailed RCA into the app's Slack thread
+        # (subthread reply under the [App_Name] Failed parent), with the session link
+        # and Approve/Reject HITL buttons if a guardrails action is pending.
+        try:
+            source = job.get("source", "")
+            if source == "argocd_poller":
+                from app.slack.reporter import post_rca_report
+                app_name = (job.get("metadata") or {}).get("argocd_app") or ""
+                frontend_url = os.environ.get("KAI_OPS_FRONTEND_URL", "https://kaiops-sre.searceinc.net")
+                session_link = f"{frontend_url}/console/{session_id}"
+                awaits_confirm = bool(report.get("requires_confirmation"))
+                await post_rca_report(
+                    app_name=app_name,
+                    rca_text=response or "RCA completed. See console for details.",
+                    status="Failed",
+                    session_link=session_link,
+                    hitl_action_id=approval_token if awaits_confirm else "",
+                )
+                logger.info(f"[RUNTIME] Posted RCA report to Slack thread for {app_name}")
+        except Exception as slack_err:  # noqa: BLE001
+            logger.warning(f"[RUNTIME] post_rca_report (Slack) failed: {slack_err}")
+
         return report
 
     except Exception as e:
