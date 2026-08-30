@@ -382,10 +382,11 @@ class VertexFirestoreSessionService(BaseSessionService):
         session_id: str, 
         sender: MessageSender, 
         text: str, 
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        allow_runtime: bool = False,
     ) -> Optional[Dict[str, Any]]:
         
-        session = self.get_api_session(user_id, session_id)
+        session = self.get_api_session(user_id, session_id, allow_runtime=allow_runtime)
         if not session:
             return None
 
@@ -477,7 +478,17 @@ class VertexFirestoreSessionService(BaseSessionService):
                 meta["requires_confirmation"] = False
                 meta["resolved"] = True
                 meta["resolution"] = resolution
-                doc.reference.update({"metadata": meta})
+                # Rewrite the message text so the stale "Action Required ...
+                # Please confirm" prompt is replaced by an unambiguous outcome.
+                # The UI hides the approval card via metadata, but the raw text
+                # would otherwise still read as a live request.
+                if resolution == "approved":
+                    new_text = f"✅ **Approved** — the action was executed. See the next message for the outcome."
+                elif resolution == "rejected":
+                    new_text = f"❌ **Rejected** — the action was cancelled by the operator."
+                else:
+                    new_text = data.get("text", "")
+                doc.reference.update({"metadata": meta, "text": new_text})
                 updated += 1
             if updated:
                 logger.info(

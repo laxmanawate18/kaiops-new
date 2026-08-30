@@ -303,12 +303,13 @@ def _get_tool_registry() -> Dict[str, Any]:
     return TOOL_REGISTRY
 
 
-def _persist_messages(session_id: str, user_id: str, user_text: str, assistant_text: str, metadata: Dict[str, Any]):
+def _persist_messages(session_id: str, user_id: str, user_text: str, assistant_text: str, metadata: Dict[str, Any],
+                      allow_runtime: bool = False):
     db = _get_db()
-    db.add_message(user_id=user_id, session_id=session_id, sender=MessageSender.USER, text=user_text)
+    db.add_message(user_id=user_id, session_id=session_id, sender=MessageSender.USER, text=user_text, allow_runtime=allow_runtime)
     assistant_message = db.add_message(
         user_id=user_id, session_id=session_id,
-        sender=MessageSender.ASSISTANT, text=assistant_text, metadata=metadata
+        sender=MessageSender.ASSISTANT, text=assistant_text, metadata=metadata, allow_runtime=allow_runtime
     )
     return assistant_message
 
@@ -402,7 +403,8 @@ async def approve_action_endpoint(
     }
     assistant_message = _persist_messages(
         session_id, current_user.id,
-        f"[APPROVED] {tool_name}", output_text, metadata
+        f"[APPROVED] {tool_name}", output_text, metadata,
+        allow_runtime=True,
     )
 
     return SendMessageResponse(
@@ -428,8 +430,18 @@ async def reject_action_endpoint(
     record = get_pending(token)
     if not record:
         raise HTTPException(status_code=404, detail="No pending action for this token")
-    # Uniform 404 on binding mismatch (parity with /approve; no existence leak)
-    if record.get("session_id") != session_id or record.get("user_id") != current_user.id:
+    # Uniform 404 on binding mismatch (parity with /approve; no existence leak).
+    # Admins/team-leads may reject autonomous (runtime) actions on the operator's
+    # behalf, mirroring the relax applied to /approve.
+    record_owner = record.get("user_id")
+    runtime_owner = __import__("app.chat.custom_session_service", fromlist=["SYSTEM_RUNTIME_USER_ID"]).SYSTEM_RUNTIME_USER_ID
+    binding_ok = (
+        record.get("session_id") == session_id
+        and (record_owner == current_user.id
+             or (record_owner == runtime_owner
+                 and current_user.role in (UserRole.ADMIN, UserRole.TEAM_LEAD)))
+    )
+    if not binding_ok:
         raise HTTPException(status_code=404, detail="No pending action for this token")
 
     tool_name = record.get("tool_name", "unknown_tool")
@@ -444,7 +456,8 @@ async def reject_action_endpoint(
     metadata = {"hitl_rejected": True, "tool_name": tool_name}
     assistant_message = _persist_messages(
         session_id, current_user.id,
-        f"[REJECTED] {tool_name}", ack_text, metadata
+        f"[REJECTED] {tool_name}", ack_text, metadata,
+        allow_runtime=True,
     )
 
     return SendMessageResponse(
