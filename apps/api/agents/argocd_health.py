@@ -315,7 +315,15 @@ async def _handle_healthy(app_name: str, state: Dict[str, Any]) -> None:
     """Post/reply a healthy deploy confirmation in the app's thread."""
     from app.slack.reporter import report_app_status
     logger.info(f"[ARGOCD] HEALTHY: {app_name} health={state['health']} sync={state['sync']}")
+    provider = "gcp"
+    try:
+        from app.applications.database_firestore import application_db
+        app = application_db.get_application_by_name(app_name)
+        provider = (app or {}).get("cloud_provider") or provider
+    except Exception:  # noqa: BLE001
+        pass
     details = {
+        "cloud_provider": provider,
         "cluster": os.environ.get("GKE_CLUSTER_NAME", ""),
         "namespace": "kaiops-demo",
         "env": "production",
@@ -324,7 +332,7 @@ async def _handle_healthy(app_name: str, state: Dict[str, Any]) -> None:
         await report_app_status(
             app_name=app_name, status="Healthy",
             detail="✅ Application deployed successfully.",
-            cloud_provider="gcp", details=details,
+            cloud_provider=provider, details=details,
         )
     except Exception as e:  # noqa: BLE001
         logger.error(f"[ARGOCD] healthy report failed: {e}")
