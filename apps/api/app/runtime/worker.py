@@ -117,6 +117,11 @@ async def run_job(job: Dict[str, Any], session_service: VertexFirestoreSessionSe
             "pending_tool": pending_tool,
             "approval_token": approval_token,
             "success": result.get("success", False),
+            # NOTE: key name is a frontend contract (ApprovalCard.tsx). This block is
+            # KaiOps' own HITL destructive-action gate. Google Cloud Model Armor is
+            # provisioned separately as template `kaiops-governance-template`
+            # (docs/FEATURE_PROGRESS.md §4); the Agent Gateway exposes no model-armor
+            # binding field, so platform filters apply at the app/eval layer.
             "model_armor": meta.get("model_armor"),
             "error": "",
         }

@@ -221,6 +221,11 @@ async def _run_agent_session(runner: Runner, user_id: str, session_id: str, user
                             logger.warning(f"[WARN] post_hitl_approval failed: {slack_err}")
                     except Exception as tok_err:
                         logger.error(f"[FAIL] Failed to register pending action: {tok_err}")
+                    # NOTE: key name is a frontend contract (ApprovalCard.tsx). This block is
+                    # KaiOps' own HITL destructive-action gate. Google Cloud Model Armor is
+                    # provisioned separately as template `kaiops-governance-template`
+                    # (docs/FEATURE_PROGRESS.md §4); the Agent Gateway exposes no model-armor
+                    # binding field, so platform filters apply at the app/eval layer.
                     extra_metadata["model_armor"] = {
                         "status": "GUARDRAIL_INTERCEPTED",
                         "policy": "DESTRUCTIVE_ACTION_PROTECTION",
@@ -419,6 +424,11 @@ async def stream_message(
                             )
                         except Exception as tok_err:
                             logger.error(f"[FAIL] Failed to register pending action: {tok_err}")
+                        # NOTE: key name is a frontend contract (ApprovalCard.tsx). This block is
+                        # KaiOps' own HITL destructive-action gate. Google Cloud Model Armor is
+                        # provisioned separately as template `kaiops-governance-template`
+                        # (docs/FEATURE_PROGRESS.md §4); the Agent Gateway exposes no model-armor
+                        # binding field, so platform filters apply at the app/eval layer.
                         extra_metadata["model_armor"] = {
                             "status": "GUARDRAIL_INTERCEPTED",
                             "policy": "DESTRUCTIVE_ACTION_PROTECTION",
