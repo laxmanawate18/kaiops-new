@@ -17,6 +17,8 @@ from app.feedback.routes import router as feedback_router
 from app.chat.routes import router as chat_router
 from app.applications.routes import router as applications_router
 from app.metadata.routes import router as metadata_router
+from app.runtime.routes import router as runtime_router
+from app.slack.interactions import router as slack_router
 
 # Load environment variables from .env file
 from dotenv import load_dotenv
@@ -211,10 +213,15 @@ def create_app() -> FastAPI:
     )
     
     # Include Agent Runtime routes (Autonomous Loop / Model C)
-    from app.runtime.routes import router as runtime_router
     adk_app.include_router(
         runtime_router,
         tags=["Agent Runtime"]
+    )
+    
+    # Include Slack interactive actions (Approve/Reject HITL via Slack buttons)
+    adk_app.include_router(
+        slack_router,
+        tags=["Slack Interactions"]
     )
     
     
