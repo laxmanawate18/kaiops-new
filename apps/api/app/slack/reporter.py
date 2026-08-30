@@ -55,6 +55,34 @@ def _save_thread_ts(app_name: str, ts: str) -> None:
         logger.warning(f"[SLACK] save thread ts failed: {e}")
 
 
+_SLACK_TEXT_CHUNK = 2900
+
+
+def _chunk_block_text(text: str, limit: int = _SLACK_TEXT_CHUNK) -> list:
+    """Split a long string into multiple Slack section blocks.
+
+    Slack rejects any single ``section`` block whose ``mrkdwn`` text exceeds
+    3000 chars with "invalid_blocks". The RCA report (or any long detail) is
+    chunked here so the post succeeds while keeping the message readable.
+    """
+    if len(text) <= limit:
+        return [{"type": "section", "text": {"type": "mrkdwn", "text": text}}]
+    chunks = []
+    remaining = text
+    while len(remaining) > limit:
+        # Prefer to break near a newline so we don't split a word awkwardly.
+        split_at = remaining.rfind("\n", 0, limit)
+        if split_at <= 0:
+            split_at = limit
+        chunk = remaining[:split_at].rstrip()
+        if chunk:
+            chunks.append({"type": "section", "text": {"type": "mrkdwn", "text": chunk}})
+        remaining = remaining[split_at:].lstrip()
+    if remaining:
+        chunks.append({"type": "section", "text": {"type": "mrkdwn", "text": remaining}})
+    return chunks
+
+
 def _blocks(status: str, detail: str, session_link: str = "", is_infra: bool = False,
             hitl_action_id: str = "") -> list:
     """Build a rich block card for a status message.
@@ -68,8 +96,12 @@ def _blocks(status: str, detail: str, session_link: str = "", is_infra: bool = F
     header = f"[{'✅ Healthy' if status == 'Healthy' else '❌ Failed'}]"
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": header, "emoji": True}},
-        {"type": "section", "text": {"type": "mrkdwn", "text": detail or "_No detail_"}},
     ]
+    # Chunk long text into multiple section blocks. Slack limits a single
+    # section/mrkdwn block's text to 3000 chars; a long RCA would exceed it and
+    # cause "invalid_blocks". We split on a safe 2900-char boundary (preferring
+    # to break at a newline) so the whole report posts successfully.
+    blocks.extend(_chunk_block_text(detail or "_No detail_"))
     if is_infra:
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": f"⚠️ *{SRE_TAG}*"}})
     if session_link:
