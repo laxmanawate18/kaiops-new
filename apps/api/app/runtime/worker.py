@@ -101,18 +101,23 @@ async def run_job(job: Dict[str, Any], session_service: VertexFirestoreSessionSe
             source = job.get("source", "")
             if source == "argocd_poller":
                 from app.slack.reporter import post_rca_report
+                from agents.sre_agent.remediation_guide import classify_root_cause
                 app_name = (job.get("metadata") or {}).get("argocd_app") or ""
                 frontend_url = os.environ.get("KAI_OPS_FRONTEND_URL", "https://kaiops-sre.searceinc.net")
                 session_link = f"{frontend_url}/console/{session_id}"
                 awaits_confirm = bool(report.get("requires_confirmation"))
+                # Classify the RCA so the Slack thread tags SRE team when it is
+                # infra-related (per the app-vs-infra classifier).
+                is_infra = classify_root_cause(response) == "infra"
                 await post_rca_report(
                     app_name=app_name,
                     rca_text=response or "RCA completed. See console for details.",
                     status="Failed",
                     session_link=session_link,
                     hitl_action_id=approval_token if awaits_confirm else "",
+                    is_infra=is_infra,
                 )
-                logger.info(f"[RUNTIME] Posted RCA report to Slack thread for {app_name}")
+                logger.info(f"[RUNTIME] Posted RCA report to Slack thread for {app_name} (is_infra={is_infra})")
         except Exception as slack_err:  # noqa: BLE001
             logger.warning(f"[RUNTIME] post_rca_report (Slack) failed: {slack_err}")
 
