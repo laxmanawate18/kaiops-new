@@ -31,18 +31,30 @@ def _pending_ref():
 
 
 def _now() -> datetime:
-    """Naive UTC datetime (Firestore-friendly) for comparing TTLs."""
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    """Timezone-aware UTC datetime for comparing TTLs.
+
+    Firestore persists datetimes with timezone info, so we compare aware-to-aware
+    to avoid the `TypeError: can't compare offset-naive and offset-aware datetimes`.
+    """
+    return datetime.now(timezone.utc)
+
+
+def _as_aware(value: datetime) -> datetime:
+    """Ensure a datetime is timezone-aware (assume UTC if naive)."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
 
 
 def _is_expired(record: Dict[str, Any]) -> bool:
     created = record.get("created_at")
     expires = record.get("expires_at")
+    now = _now()
     # Prefer explicit expires_at if stored; else fall back to created_at + TTL.
     if isinstance(expires, datetime):
-        return _now() > expires
+        return now > _as_aware(expires)
     if isinstance(created, datetime):
-        return _now() > (created + timedelta(seconds=PENDING_TTL_SECONDS))
+        return now > (_as_aware(created) + timedelta(seconds=PENDING_TTL_SECONDS))
     return False
 
 
