@@ -67,7 +67,11 @@ async def get_session(
     session_id: str,
     current_user: UserResponse = Depends(get_current_user)
 ):
-    session = _get_db().get_api_session(current_user.id, session_id)
+    # Admins/team leads may open autonomous (runtime) sessions read-only, e.g.
+    # the console deep-link posted to Slack after an RCA. Regular users are still
+    # restricted to sessions they own.
+    allow_runtime = current_user.role in (UserRole.ADMIN, UserRole.TEAM_LEAD)
+    session = _get_db().get_api_session(current_user.id, session_id, allow_runtime=allow_runtime)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found or access denied")
     return ChatSession(**session)
@@ -245,11 +249,15 @@ async def get_messages(
     offset: int = Query(0, ge=0),
     current_user: UserResponse = Depends(get_current_user)
 ):
+    # Admins/team leads may read messages of autonomous (runtime) sessions so the
+    # Slack console deep-link renders the RCA conversation.
+    allow_runtime = current_user.role in (UserRole.ADMIN, UserRole.TEAM_LEAD)
     messages, total = _get_db().get_messages(
         user_id=current_user.id,
         session_id=session_id,
         limit=limit,
-        offset=offset
+        offset=offset,
+        allow_runtime=allow_runtime
     )
     if messages is None and total == 0:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found or access denied")

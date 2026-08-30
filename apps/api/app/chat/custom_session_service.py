@@ -11,6 +11,11 @@ from app.chat.models import MessageSender
 
 logger = logging.getLogger(__name__)
 
+# The synthetic user that owns autonomous (runtime) sessions created by the
+# background worker. These sessions are shared/visible to admins & team leads so
+# they can open the console link posted in Slack without an ownership mismatch.
+SYSTEM_RUNTIME_USER_ID = "sre-agent-runtime"
+
 
 def _to_iso(value: Any) -> Any:
     """Convert Firestore DatetimeWithNanoseconds/datetime values to ISO strings."""
@@ -199,12 +204,16 @@ class VertexFirestoreSessionService(BaseSessionService):
 
         return sorted(sessions, key=_sort_key, reverse=True)
 
-    def get_api_session(self, user_id: str, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_api_session(self, user_id: str, session_id: str, allow_runtime: bool = False) -> Optional[Dict[str, Any]]:
         doc = self.sessions_ref.document(session_id).get()
         if not doc.exists:
             return None
         data = _normalize_record(doc.to_dict())
-        if data.get("user_id") != user_id:
+        # Runtime (autonomous worker) sessions are owned by the synthetic system
+        # user. Admins/team leads are allowed to open them read-only so the Slack
+        # console deep-link works. Note this does NOT grant message-write access.
+        owner = data.get("user_id")
+        if owner != user_id and not (allow_runtime and owner == SYSTEM_RUNTIME_USER_ID):
             return None
         if "id" not in data:
             data["id"] = doc.id
@@ -334,8 +343,8 @@ class VertexFirestoreSessionService(BaseSessionService):
         
         return msg_data
 
-    def get_messages(self, user_id: str, session_id: str, limit: Optional[int] = None, offset: int = 0) -> Tuple[Optional[List[Dict[str, Any]]], int]:
-        session = self.get_api_session(user_id, session_id)
+    def get_messages(self, user_id: str, session_id: str, limit: Optional[int] = None, offset: int = 0, allow_runtime: bool = False) -> Tuple[Optional[List[Dict[str, Any]]], int]:
+        session = self.get_api_session(user_id, session_id, allow_runtime=allow_runtime)
         if not session:
             return None, 0
             
