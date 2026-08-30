@@ -15,7 +15,7 @@ def token():
     r = subprocess.run("gcloud auth application-default print-access-token", capture_output=True, text=True, shell=True, encoding="utf-8", errors="replace")
     return r.stdout.strip().splitlines()[-1].strip()
 
-PROJ="project-3da8cb5f-328e-44d3-b7a"; LOC="us-central1"; ENGINE="4552195292539125760"
+PROJ=os.environ.get("GOOGLE_CLOUD_PROJECT", "project-3da8cb5f-328e-44d3-b7a"); LOC="us-central1"; ENGINE="4552195292539125760"
 
 def main():
     open(LOG, "w", encoding="utf-8").close()

@@ -12,7 +12,7 @@ def log(msg):
 
 def main():
     open(LOG, "w", encoding="utf-8").close()  # reset
-    os.environ["GOOGLE_CLOUD_PROJECT"] = "project-3da8cb5f-328e-44d3-b7a"
+    os.environ["GOOGLE_CLOUD_PROJECT"] = os.environ.get("GOOGLE_CLOUD_PROJECT", "project-3da8cb5f-328e-44d3-b7a")
     os.environ["GOOGLE_CLOUD_LOCATION"] = "us-central1"
     sys.path.insert(0, r"f:\Personal\AI-Project\kaiops_latest\apps\api\agents\gateway_identity_agent")
     try:
@@ -21,7 +21,7 @@ def main():
         from vertexai.agent_engines import AdkApp
         from agent import root_agent, MODEL
 
-        PROJECT = "project-3da8cb5f-328e-44d3-b7a"
+        PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "project-3da8cb5f-328e-44d3-b7a")
         LOCATION = "us-central1"
         STAGING_BUCKET = "gs://kaiops-gateway-identity-staging"
         AGENT_GATEWAY = f"projects/{PROJECT}/locations/{LOCATION}/agentGateways/kaiops-egress-gw"
