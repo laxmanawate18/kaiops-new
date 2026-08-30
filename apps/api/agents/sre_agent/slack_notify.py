@@ -166,7 +166,42 @@ def notify_slack(channel: str, message: str, session_link: str = "", pending_act
     return "Failed to post to Slack (check SLACK_WEBHOOK_URL configuration)."
 
 
-__all__ = ["notify_slack", "register_action_button"]
+def post_hitl_approval(session_id: str, user_id: str, tool_name: str, approval_token: str,
+                       session_link: str = "", channel: str = "") -> str:
+    """Deterministically post a Slack message with Approve/Reject buttons for a
+    specific HITL pending action (called from agent_service when the gate fires).
+
+    This guarantees the buttons carry the exact approval_token, so clicking a
+    button resolves the real pending action — regardless of what the LLM said.
+    """
+    channel = channel or SLACK_CHANNEL or SLACK_CHANNEL_ID
+    if not (SLACK_BOT_TOKEN and approval_token):
+        return ""
+
+    blocks = [
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text":
+                f"⚠️ *KaiOps HITL Approval Required*\n"
+                f"Session: `{session_id}`\n\n"
+                f"The agent wants to run the destructive action *`{tool_name}`*.\n"
+                f"{('<'+session_link+'|🔗 Open in KaiOps console>') if session_link else ''}"},
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {"type": "button", "text": {"type": "plain_text", "text": "✅ Approve"},
+                 "style": "primary", "value": approval_token, "action_id": "approve_action"},
+                {"type": "button", "text": {"type": "plain_text", "text": "❌ Reject"},
+                 "style": "danger", "value": approval_token, "action_id": "reject_action"},
+            ],
+        },
+    ]
+    ts = _post_blocks(blocks, channel=channel, text=f"KaiOps HITL: {tool_name}")
+    if ts:
+        register_action_button(ts, approval_token)
+        return ts
+    return ""
 
 
-__all__ = ["notify_slack"]
+__all__ = ["notify_slack", "register_action_button", "post_hitl_approval"]

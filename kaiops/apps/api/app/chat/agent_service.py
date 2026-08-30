@@ -5,6 +5,7 @@ This service integrates with the KaiOPS SRE Agent using the correct ADK invocati
 
 import logging
 import re
+import os
 from typing import Dict, Any, Optional
 from google.adk.runners import Runner
 from google.genai.types import Content, Part
@@ -201,10 +202,23 @@ async def _run_agent_session(runner: Runner, user_id: str, session_id: str, user
                     extra_metadata["requires_confirmation"] = True
                     extra_metadata["pending_tool"] = tool_name
                     try:
-                        extra_metadata["approval_token"] = create_pending(
+                        approval_token = create_pending(
                             session_id=session_id, user_id=user_id, tool_name=tool_name,
                             args=conf.get("args"),
                         )
+                        extra_metadata["approval_token"] = approval_token
+                        # Post a Slack message with Approve/Reject buttons bound to
+                        # this exact token, so the dev can approve from Slack.
+                        try:
+                            from agents.sre_agent.slack_notify import post_hitl_approval
+                            frontend_url = os.environ.get("KAI_OPS_FRONTEND_URL", "https://kaiops-sre.searceinc.net")
+                            post_hitl_approval(
+                                session_id=session_id, user_id=user_id,
+                                tool_name=tool_name, approval_token=approval_token,
+                                session_link=f"{frontend_url}/console/{session_id}",
+                            )
+                        except Exception as slack_err:
+                            logger.warning(f"[WARN] post_hitl_approval failed: {slack_err}")
                     except Exception as tok_err:
                         logger.error(f"[FAIL] Failed to register pending action: {tok_err}")
                     extra_metadata["model_armor"] = {
