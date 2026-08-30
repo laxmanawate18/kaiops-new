@@ -380,15 +380,16 @@ async def _handle_healthy(app_name: str, state: Dict[str, Any]) -> None:
         "namespace": state.get("namespace") or "default",
         "env": "production",
     }
-    # Resolve the app's latest RCA/runtime session so the console link points to a
-    # REAL conversation. Falls back to the app route if none tagged yet.
+    # Always resolve (and if needed create) a REAL KaiOps session for the app so
+    # the console link never 404s. The canonical id is runtime-kaiops-{app_name}.
     session_link = ""
     try:
         from app.chat.agent_service import get_session_service
         svc = get_session_service()
         sess = svc.get_runtime_session_for_app(app_name)
-        if sess:
-            session_link = f"{FRONTEND_URL}/console/{sess['id']}"
+        if not sess:
+            sess = svc.ensure_app_session(app_name)
+        session_link = f"{FRONTEND_URL}/console/{sess['id']}"
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[ARGOCD] resolve runtime session for {app_name} failed: {e}")
     if not session_link:

@@ -49,17 +49,22 @@ async def get_sessions(
     current_user: UserResponse = Depends(get_current_user)
 ):
     try:
-        sessions = _get_db().get_user_sessions(
+        user_sessions = _get_db().get_user_sessions(
             user_id=current_user.id,
             include_inactive=include_inactive
         )
+        sessions = user_sessions
         # Admins/team-leads also see the autonomous (RCA/runtime) sessions that the
         # background worker created. These are surfaced in the left panel so the
         # Slack console deep-links resolve to a real conversation instead of 404.
+        # Runtime sessions are given priority so the most recent RCA (from the
+        # Slack deep-link) appears at/near the top of the panel.
         if current_user.role in (UserRole.ADMIN, UserRole.TEAM_LEAD):
             runtime = _get_db().get_runtime_sessions(limit=50)
-            seen = {s.get("id") for s in sessions}
-            sessions = sessions + [s for s in runtime if s.get("id") not in seen]
+            seen = {s.get("id") for s in user_sessions}
+            runtime_only = [s for s in runtime if s.get("id") not in seen]
+            # Newest runtime first (they're already sorted desc by last_modified).
+            sessions = runtime_only + user_sessions
         return GetSessionsResponse(
             sessions=[ChatSession(**s) for s in sessions],
             total=len(sessions)

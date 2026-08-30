@@ -227,12 +227,22 @@ class VertexFirestoreSessionService(BaseSessionService):
     def get_runtime_session_for_app(self, app_name: str) -> Optional[Dict[str, Any]]:
         """Return the most recent runtime session tagged for a given app, or None.
 
-        Used by the Healthy path to build a real console deep-link to the app's
-        latest RCA conversation (instead of a fabricated session id).
+        Uses the deterministic id ``runtime-kaiops-{app_name}`` convention first,
+        then falls back to scanning tagged sessions. Used by the Healthy path to
+        build a real console deep-link to the app's latest RCA conversation.
         """
         if not app_name:
             return None
         try:
+            # Deterministic session for the app (created on demand by the Healthy
+            # path) — this is the canonical, always-resolvable deep-link target.
+            canonical_id = f"runtime-kaiops-{app_name}"
+            doc = self.sessions_ref.document(canonical_id).get()
+            if doc.exists:
+                data = _normalize_record(doc.to_dict())
+                data.setdefault("id", doc.id)
+                return data
+            # Scan for a tagged runtime session (newest).
             query = self.sessions_ref.where("user_id", "==", SYSTEM_RUNTIME_USER_ID)
             best = None
             for doc in query.stream():
@@ -243,7 +253,6 @@ class VertexFirestoreSessionService(BaseSessionService):
                 if best is None:
                     best = data
                     continue
-                # keep the newest
                 best_ts = best.get("last_modified", "")
                 curr_ts = data.get("last_modified", "")
                 if curr_ts > best_ts:
@@ -252,6 +261,35 @@ class VertexFirestoreSessionService(BaseSessionService):
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[SESSION] resolve runtime session for {app_name} failed: {e}")
             return None
+
+    def ensure_app_session(self, app_name: str) -> Dict[str, Any]:
+        """Create (or return) the canonical runtime session for an app.
+
+        This gives the Healthy path a real, always-valid console deep-link
+        (``/console/runtime-kaiops-{app_name}``) instead of a fabricated id.
+        """
+        canonical_id = f"runtime-kaiops-{app_name}"
+        doc = self.sessions_ref.document(canonical_id).get()
+        if doc.exists:
+            data = _normalize_record(doc.to_dict())
+            data.setdefault("id", doc.id)
+            return data
+        now = datetime.now(timezone.utc).isoformat()
+        session_data = {
+            "id": canonical_id,
+            "user_id": SYSTEM_RUNTIME_USER_ID,
+            "app_name": "kaiops",
+            "name": f"Runtime · {app_name}",
+            "created_at": now,
+            "last_modified": now,
+            "message_count": 0,
+            "is_active": True,
+            "metadata": {"application_name": app_name},
+            "application_name": app_name,
+            "session_type": "runtime",
+        }
+        self.sessions_ref.document(canonical_id).set(session_data)
+        return dict(session_data)
         if not doc.exists or doc.to_dict().get("user_id") != user_id:
             return None
             
