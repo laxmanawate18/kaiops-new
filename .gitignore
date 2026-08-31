@@ -154,3 +154,20 @@ apps/api/scratch/
 
 # Local-only scratch/artifacts
 _local_artifacts/
+
+# Non-app / judge-irrelevant files (kept locally, NOT pushed)
+BLOG_DRAFT.md
+SOCIAL_DRAFT.md
+VIDEO_SCRIPT.md
+OVERNIGHT_AUTOPILOT.md
+OVERNIGHT_REPORT.md
+deep_e2e_results.json
+deep_e2e_results_v2.json
+deploy-backend-v2.ps1
+# Legacy/pre-restructure scaffold + orchestrator context (kept locally, NOT pushed)
+_legacy/
+# Local junk logs / crash dumps
+_crash_watcher_setup.log
+_redeploy.log
+bash.exe.stackdump
+*.stackdump
