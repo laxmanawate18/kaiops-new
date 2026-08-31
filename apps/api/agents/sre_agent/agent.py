@@ -43,7 +43,10 @@ from agents.github_agent.tools import (
 from agents.grafana_agent.tools import (
     search_dashboards,
     get_dashboard_summary,
-    list_alert_rules
+    list_alert_rules,
+    query_prometheus,
+    query_loki,
+    list_datasources
 )
 
 from agents.azure_rca_agent.tools import (
@@ -309,6 +312,9 @@ all_tools = [
     search_dashboards,
     get_dashboard_summary,
     list_alert_rules,
+    query_prometheus,
+    query_loki,
+    list_datasources,
     
     # Cloud-provider-aware Log RCA tools (route based on app's cloud provider)
     check_application_logs,

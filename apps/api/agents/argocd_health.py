@@ -249,6 +249,14 @@ def _auto_register_app(app_name: str, state: Dict[str, Any]) -> None:
         namespace = state.get("namespace") or ""
         cluster = state.get("cluster") or os.environ.get("GKE_CLUSTER_NAME", "")
         cloud = _infer_cloud_provider(state.get("cluster") or cluster)
+        # Auto-provision a Grafana dashboard + alert rule for the app so the RCA
+        # flow has a first-class observability surface to reference. Best-effort.
+        grafana = {}
+        try:
+            from agents.grafana_agent.provision import provision_app
+            grafana = provision_app(app_name, namespace) or {}
+        except Exception as gerr:  # noqa: BLE001
+            logger.warning(f"[ARGOCD] grafana provisioning failed for {app_name}: {gerr}")
         app_data = {
             "application_name": app_name,
             "application_owner": "kaiops-auto",
@@ -257,10 +265,12 @@ def _auto_register_app(app_name: str, state: Dict[str, Any]) -> None:
             "gke_cluster_name": cluster,
             "argocd_app_name": app_name,
             "status": "ACTIVE",
+            "grafana_dashboard": grafana.get("grafana_dashboard", ""),
+            "grafana_dashboard_url": grafana.get("grafana_dashboard_url", ""),
             "custom_metadata": [{"key": "source", "value": "argocd_auto_register"}],
         }
         application_db.create_application(app_data)
-        logger.info(f"[ARGOCD] Auto-registered app '{app_name}' into KaiOps metadata (cloud={cloud})")
+        logger.info(f"[ARGOCD] Auto-registered app '{app_name}' into KaiOps metadata (cloud={cloud}, grafana={grafana.get('grafana_dashboard','')})")
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[ARGOCD] auto-register failed for {app_name}: {e}")
 
@@ -334,10 +344,12 @@ async def _handle_failure(app_name: str, state: Dict[str, Any]) -> None:
 
     incident_type = (state.get("sync") or state.get("health") or "failed").lower()
     provider = "gcp"
+    grafana_dash = ""
     try:
         from app.applications.database_firestore import application_db
         app = application_db.get_application_by_name(app_name)
         provider = (app or {}).get("cloud_provider") or provider
+        grafana_dash = (app or {}).get("grafana_dashboard") or ""
     except Exception:  # noqa: BLE001
         pass
 
@@ -346,7 +358,13 @@ async def _handle_failure(app_name: str, state: Dict[str, Any]) -> None:
         f"Health: {state.get('health')}. Sync: {state.get('sync')}. "
         f"Cloud provider: {provider}. "
         "Investigate the root cause, determine if it is application-related or "
-        "infrastructure-related, and provide diagnosis + remediation steps. "
+        "infrastructure-related, and provide diagnosis + remediation steps.\n"
+        # Grafana observability: surface the app's dashboard + alert rules in the RCA.
+        f"\nOBSERVABILITY: Use the Grafana tools (search_dashboards, list_alert_rules, "
+        f"get_dashboard_summary, query_prometheus) to pull metrics and alert state for `{app_name}`. "
+        f"The app's Grafana dashboard uid is `{grafana_dash or 'kaiops-'+app_name}`. "
+        "Include in your report: the dashboard name/link/uid, any firing/alarming alert rules, "
+        "and 2-3 Prometheus metrics (CPU/memory/error rate or pod restarts) that support your diagnosis.\n"
         "After the RCA, send the summary to Slack with the status header "
         "[App_Name] Failed and tag SRE team if it is infra-related."
     )

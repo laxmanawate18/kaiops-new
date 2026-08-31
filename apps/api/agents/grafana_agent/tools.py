@@ -42,8 +42,33 @@ async def list_alert_rules() -> str:
     return await _call_and_format_grafana_mcp("list_alert_rules")
 
 
+async def query_prometheus(query: str, datasource_uid: str = "") -> str:
+    """Execute a PromQL query against the Grafana Prometheus datasource.
+
+    Use for metrics such as CPU, memory, error rate, pod restarts, etc.
+    """
+    if not query:
+        return "[WARN] **Empty PromQL query**"
+    return await _call_and_format_grafana_mcp("query_prometheus", query=query, datasource_uid=datasource_uid)
+
+
+async def query_loki(query: str, datasource_uid: str = "") -> str:
+    """Execute a LogQL query against the Grafana Loki datasource (logs)."""
+    if not query:
+        return "[WARN] **Empty LogQL query**"
+    return await _call_and_format_grafana_mcp("query_loki", query=query, datasource_uid=datasource_uid)
+
+
+async def list_datasources() -> str:
+    """List the configured Grafana datasources."""
+    return await _call_and_format_grafana_mcp("list_datasources")
+
+
 __all__ = [
     "search_dashboards",
     "get_dashboard_summary",
-    "list_alert_rules"
+    "list_alert_rules",
+    "query_prometheus",
+    "query_loki",
+    "list_datasources"
 ]
