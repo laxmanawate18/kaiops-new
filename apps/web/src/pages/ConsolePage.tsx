@@ -63,6 +63,12 @@ export default function ConsolePage() {
   const sessionsQuery = useQuery({
     queryKey: qk.sessions,
     queryFn: () => chatApi.listSessions(true),
+    // The background worker creates autonomous (runtime) RCA sessions over time
+    // (e.g. from the Slack deep-link or the ArgoCD poller). Poll every 30s and
+    // refetch on window focus so a newly-created runtime session shows up in the
+    // left panel without requiring a manual reload.
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   })
 
   const sessions = useMemo(() => sessionsQuery.data?.sessions ?? [], [sessionsQuery.data])
