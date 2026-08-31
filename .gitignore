@@ -8,6 +8,8 @@ ENV/
 
 # Standalone demo app repo (pushed to laxmanawate18/kaiops-demo-app, NOT part of kaiops-new)
 kaiops-demo-app/
+kaiops-azure-demo-app/
+kaiops-aws-demo-app/
 
 # Environment / Secrets (never commit)
 .env
