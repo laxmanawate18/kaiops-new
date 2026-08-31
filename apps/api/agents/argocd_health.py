@@ -213,6 +213,22 @@ def _app_metadata_exists(app_name: str) -> bool:
         return False
 
 
+def _infer_cloud_provider(cluster: str) -> str:
+    """Infer the cloud provider from an ArgoCD destination server / cluster name.
+
+    AKS control-plane DNS ends in ``*.azmk8s.io`` or ``*.hcp.*.azmk8s.io``;
+    EKS hosts are ``*.eks.amazonaws.com`` and kubeconfig contexts are
+    ``arn:aws:eks:...``. Anything else (``kubernetes.default.svc`` = in-cluster
+    GKE) defaults to ``gcp``.
+    """
+    c = (cluster or "").lower()
+    if "azmk8s" in c or ".azure." in c:
+        return "azure"
+    if ".eks.amazonaws.com" in c or "arn:aws:eks" in c or ":cluster/" in c:
+        return "aws"
+    return "gcp"
+
+
 def _auto_register_app(app_name: str, state: Dict[str, Any]) -> None:
     """Auto-register an ArgoCD-discovered app into KaiOps metadata (zero-touch).
 
@@ -220,8 +236,9 @@ def _auto_register_app(app_name: str, state: Dict[str, Any]) -> None:
     and this poller syncs it into the KaiOps Firestore ``applications`` collection
     so routing (cloud_provider) and RCA work without any manual entry.
 
-    - ``cloud_provider`` is read from the app's ArgoCD label/annotation
-      (``cloud-provider``) if present, else defaults to ``gcp``.
+    - ``cloud_provider`` is inferred from the ArgoCD Application destination
+      server (AKS -> azure, EKS -> aws, else gcp), so a cross-cloud app
+      self-registers with the right routing without manual Firestore edits.
     - namespace/cluster are taken from the ArgoCD Application spec destination.
     """
     try:
@@ -229,9 +246,9 @@ def _auto_register_app(app_name: str, state: Dict[str, Any]) -> None:
         if _app_metadata_exists(app_name):
             return
         # Compute a best-effort cloud_provider + namespace.
-        cloud = "gcp"
         namespace = state.get("namespace") or ""
         cluster = state.get("cluster") or os.environ.get("GKE_CLUSTER_NAME", "")
+        cloud = _infer_cloud_provider(state.get("cluster") or cluster)
         app_data = {
             "application_name": app_name,
             "application_owner": "kaiops-auto",
