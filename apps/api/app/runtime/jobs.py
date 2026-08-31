@@ -178,13 +178,13 @@ def claim_next_pending(worker_id: str) -> Optional[Dict[str, Any]]:
 
         # Re-read to confirm still PENDING; update if so.
         current = ref.get()
-        if not current.exists or current.get("status") != STATUS_PENDING:
+        if not current.exists or current.to_dict().get("status") != STATUS_PENDING:
             return None
 
         # Bounded re-claims: if this job has already been attempted too many
         # times, give up and move it to a terminal FAILED state.
         max_attempts = int(os.environ.get("KAIOPS_JOB_MAX_ATTEMPTS", "2"))
-        attempts = int(current.get("attempts") or 0)
+        attempts = int(current.to_dict().get("attempts") or 0)
         if attempts + 1 > max_attempts:
             ref.update({"status": STATUS_FAILED, "error": "Max attempts exceeded",
                         "updated_at": _now(), "completed_at": _now()})
