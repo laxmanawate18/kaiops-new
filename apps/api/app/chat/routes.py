@@ -132,12 +132,15 @@ async def send_message(
     if not (request.message or "").strip():
         raise HTTPException(status_code=422, detail="message cannot be empty")
     try:
+        # Admins/team-leads may send messages into autonomous (runtime) sessions.
+        allow_runtime = current_user.role in (UserRole.ADMIN, UserRole.TEAM_LEAD)
         user_message = _get_db().add_message(
             user_id=current_user.id,
             session_id=request.session_id,
             sender=MessageSender.USER,
             text=request.message,
-            metadata=request.metadata
+            metadata=request.metadata,
+            allow_runtime=allow_runtime
         )
         if not user_message:
             raise HTTPException(status_code=404, detail=f"Session {request.session_id} not found or access denied")
@@ -192,8 +195,12 @@ async def stream_message_endpoint(
     if not message:
         raise HTTPException(status_code=422, detail="message is required")
 
-    # Verify session ownership first (404 if not found), matching existing patterns
-    session = _get_db().get_api_session(current_user.id, session_id)
+    # Verify session ownership first (404 if not found), matching existing patterns.
+    # Admins/team-leads may open autonomous (runtime) sessions read-write so the
+    # Slack console deep-link lets them continue the RCA conversation with the
+    # agent (session owned by the synthetic runtime user).
+    allow_runtime = current_user.role in (UserRole.ADMIN, UserRole.TEAM_LEAD)
+    session = _get_db().get_api_session(current_user.id, session_id, allow_runtime=allow_runtime)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found or access denied")
 
@@ -236,13 +243,16 @@ async def add_message_to_session(
             sender = MessageSender(sender_str)
         except ValueError:
             sender = MessageSender.USER
-        
+
+        # Admins/team-leads may send messages into autonomous (runtime) sessions.
+        allow_runtime = current_user.role in (UserRole.ADMIN, UserRole.TEAM_LEAD)
         message = _get_db().add_message(
             user_id=current_user.id,
             session_id=session_id,
             sender=sender,
             text=text,
-            metadata=metadata
+            metadata=metadata,
+            allow_runtime=allow_runtime
         )
         if not message:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found or access denied")

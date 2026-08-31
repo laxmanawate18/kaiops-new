@@ -47,9 +47,14 @@ webhook (ArgoCD Degraded / K8s crash)  →  Firestore agent_jobs[PENDING]
    →  cloud-aware remediation (GKE / EKS / AKS)  →  recovered
 ```
 
-No human is in the loop until the approval gate. The trigger, the job claim, the
-investigation, the cross-cloud evidence gathering and the report all happen
-unattended.
+No human is in the loop until the approval gate. The loop is driven unattended by
+two **Cloud Scheduler** jobs: `kaiops-argocd-poller` (every 1 min →
+`/api/v1/runtime/argocd/check`) detects an ArgoCD Degraded app and enqueues a job,
+then `kaiops-agent-worker` (every 1 min → `/api/v1/runtime/worker/run?max_jobs=1`)
+claims it with a status-guarded compare-and-swap, runs the RCA, and posts the Slack
+report. A `kaiops-crash-watcher` job additionally watches Kubernetes crash events.
+The trigger, the job claim, the investigation, the cross-cloud evidence gathering
+and the report all happen without a human on camera.
 
 **Failure tolerance.** A worker claims a `PENDING` job through a status-guarded
 compare-and-swap, so two workers can never execute the same job. Each run is bounded
@@ -62,18 +67,18 @@ or silently retrying forever.
 
 ## Architecture
 
-![KaiOps architecture](docs/architecture-simple.svg)
+![KaiOps architecture](docs/Kaiops.svg)
 
 For the detailed live inventory of the deployed mesh — Cloud Run revisions, Agent
 Engine reasoning engines, MCP servers, load balancer, certificates — see
-[`docs/architecture-system.png`](docs/architecture-system.png) and
-[`docs/architecture-live-inventory.png`](docs/architecture-live-inventory.png).
+[`docs/Full_Architecture.svg`](docs/Full_Architecture.svg) and
+[`docs/kaiops-detailed-flow.svg`](docs/kaiops-detailed-flow.svg).
 
 **Why this stack.** Cloud Run gives per-service scale-to-zero and IAM-private MCP
 endpoints, so each tool group is an independently deployed, separately authorised
 service instead of a function in one process. Firestore is the source of truth for
 jobs, sessions and metadata, so a crashed worker can resume rather than lose an
-in-flight investigation. Vertex AI + ADK provide a real agent framework — planning,
+in-flight investigation. Gemini Enterprise Agent Platform AI + ADK provide a real agent framework — planning,
 sub-agent delegation, tool confirmation — instead of a prompt wrapper. Secret Manager
 and the HITL gate keep destructive actions governed.
 
@@ -83,9 +88,9 @@ and the HITL gate keep destructive actions governed.
 
 | Mandatory requirement | Where it is met in this repo |
 |---|---|
-| **Gemini 3.5+** (Gemini API / Vertex AI) | `GEMINI_MODEL=gemini-3.6-flash` served through Vertex AI (`GOOGLE_GENAI_USE_VERTEXAI=1`); wired in `apps/api/agents/*/agent.py` |
+| **Gemini 3.5+** (Gemini API / Gemini Enterprise Agent Platform AI) | `GEMINI_MODEL=gemini-3.6-flash` served through Gemini Enterprise Agent Platform AI (`GOOGLE_GENAI_USE_Gemini Enterprise Agent PlatformAI=1`); wired in `apps/api/agents/*/agent.py` |
 | **A Google agent framework** | Google ADK — `LlmAgent`, `sub_agents` delegation, `FunctionTool(require_confirmation=True)`, `AdkApp`; root agent in `apps/api/agents/sre_agent/agent.py` |
-| **≥ 1 Google Cloud infrastructure service** | Cloud Run (backend, 3 A2A specialists, 6 MCP servers, frontend), GKE + CI/CD (`.github/workflows/deploy-to-gke.yml`), Firestore (metadata / ADK sessions / `agent_jobs`), Vertex AI Agent Engine, Vertex AI Search, Secret Manager, Cloud Build, Artifact Registry, Cloud Logging & Monitoring, IAP |
+| **≥ 1 Google Cloud infrastructure service** | Cloud Run (backend, 3 A2A specialists, 6 MCP servers, frontend), GKE + CI/CD (`.github/workflows/deploy-to-gke.yml`), Firestore (metadata / ADK sessions / `agent_jobs`), **Gemini Enterprise Agent Platform AI RAG Engine** (RAG grounding), Secret Manager, Cloud Build, Artifact Registry, Cloud Logging & Monitoring, **Cloud Scheduler** (autonomous poller + worker + crash-watcher triggers), IAP |
 
 ---
 
@@ -96,13 +101,13 @@ documented rather than papered over.
 
 | Pillar | Status | Evidence |
 |---|---|---|
-| **Agent Registry** | ✅ platform + custom | Platform registration against `agentregistry.googleapis.com` (`apps/api/agents/gateway_identity_agent/register_agent.py`), **plus** a Cloud Run registry cataloguing 6 MCP servers and 43 `TOOL_SPEC` tools. The three A2A specialists are registered as Cloud Run A2A endpoints. |
-| **Agent Runtime** | ✅ live | Firestore-backed job queue (`agent_jobs`) and autonomous worker loop (`POST /api/v1/runtime/worker/run`) with CAS claim, timeout and bounded attempts — `apps/api/app/runtime/`. |
-| **Memory Bank** | 🔶 alternative approach | Managed Sessions + Memory Bank are auto-built by `AdkApp` on Agent Engine (`agent-runtime/runtime_app.py`). The **demo path runs on Cloud Run**, where sessions are Firestore-backed and durable recall is served by a **Vertex AI Search** corpus (`kaiops-knowledge-us-east5`) over runbooks, past incidents and expert-approved feedback via the `search_knowledge` tool. This is retrieval-grounded memory, not the managed Memory Bank service — stated plainly. |
-| **Agent Identity** | ✅ live | Agent Engine created with `identity_type=AGENT_IDENTITY` (SPIFFE principal) on the gateway-bound orchestrator — `apps/api/agents/gateway_identity_agent/deploy_identity_gateway.py`. |
-| **Agent Gateway** | 🔶 partial (platform-limited) | Egress allowlist and IAP are **live**. Full `A2A_AGENT` registry routing is **not exposable** via the services registry; the orchestrator therefore reaches specialists by Cloud Run URL with a Secret-Manager-held shared credential and gateway-enforced destination allowlisting. Full investigation: [`docs/GATEWAY_FINDING.md`](docs/GATEWAY_FINDING.md). |
-| **Model Armor** | 🔶 partial (platform-limited) | Template `kaiops-governance-template` is provisioned with prompt-injection / jailbreak filters and SDP. The Google-managed Agent Gateway exposes **no** model-armor binding field, so platform filtering applies at the app / eval layer, complemented by an **independent HITL gate** on every destructive tool. See [`docs/FEATURE_PROGRESS.md`](docs/FEATURE_PROGRESS.md). |
-| **Observability** | ✅ live | Cloud Logging / Monitoring queries in the GCP RCA agent, **per-app Grafana dashboards and Prometheus alerts auto-provisioned** on registration, and a gateway decision-log runbook: [`apps/api/runbooks/gateway-observability.md`](apps/api/runbooks/gateway-observability.md). |
+| **Agent Registry** | 🔶 custom (not platform) | Cloud Run registry catalogue of 6 MCP servers + 43 `TOOL_SPEC` tools; the three A2A specialists are served as Cloud Run A2A endpoints. We use our own registry rather than the Gemini Enterprise Agent Platform agent registry — disclosed. |
+| **Agent Runtime** | ✅ live | Firestore-backed job queue (`agent_jobs`) and autonomous worker loop (`POST /api/v1/runtime/worker/run`) with CAS claim, timeout and bounded attempts — `apps/api/app/runtime/`. (Custom ADK runtime on Cloud Run, not the managed Agent Engine.) |
+| **Memory Bank** | 🔶 alternative approach | Durable recall is served by a **Gemini Enterprise Agent Platform AI RAG Engine** corpus (`kaiops-knowledge-us-east5`) over runbooks, past incidents and expert-approved feedback via the `search_knowledge` tool. Retrieval-grounded memory — not the managed Memory Bank service. |
+| **Agent Identity** | 🔶 not live | Agent Identity (SPIFFE) / gateway-bound identity is exercised via Agent Engine tooling during setup; the demo agent runs on Cloud Run and does not attach a managed SPIFFE identity. |
+| **Agent Gateway** | 🔶 partial (platform-limited) | Egress allowlist and IAP are **live**. Full `A2A_AGENT` registry routing is **not exposable** via the services registry; the orchestrator therefore reaches specialists by Cloud Run URL + Secret-Manager shared credential, gateway-enforced destination allowlisting. Full investigation: [`docs/GATEWAY_FINDING.md`](docs/GATEWAY_FINDING.md). |
+| **Model Armor** | 🔶 partial (platform-limited) | Template `kaiops-governance-template` (prompt-injection / jailbreak / SDP filters) is provisioned and applied at the app layer (no gateway binding field). Complemented by an **independent HITL gate** on every destructive tool. See [`docs/FEATURE_PROGRESS.md`](docs/FEATURE_PROGRESS.md). |
+| **Observability** | ✅ live | Cloud Logging / Monitoring queries in the GCP RCA agent, **per-app Grafana dashboards + Prometheus alerts auto-provisioned** on registration, and a gateway decision-log runbook: [`apps/api/runbooks/gateway-observability.md`](apps/api/runbooks/gateway-observability.md). (App-level observability; agent-lifecycle OTel/tracing not wired.) |
 
 Also enforced across the fleet: **Semantic Governance Policy** (`kaiops-rca-governance`)
 binds a natural-language operating constraint to the orchestrator's agent identity.
@@ -155,11 +160,11 @@ provider** from the cluster destination (AKS → azure, EKS → aws, otherwise g
 Azure and AWS apps get correct routing and Grafana provisioning with no manual
 Firestore edits. The executor then applies remediation through each cloud's native API.
 
-| Cloud | Applications |
+| Cloud | Applications (registered, auto-inferred from ArgoCD destination) |
 |---|---|
 | **GCP** | `kaiops-demo-app`, `gcp-todo-app`, `gcp-todo` |
-| **Azure** | `kaiops-azure-demo` (verified end-to-end on AKS), `azure-to-do` |
-| **AWS** | `kaiops-aws-demo` (registered + Grafana; live EKS operations are scaffold-only) |
+| **Azure** | `kaiops-azure-demo` (verified end-to-end on AKS), `azure-to-do`, `Azure Ingress App` |
+| **AWS** | `kaiops-aws-demo`, `failing-app`, `demo-broken`, `log-agent-eks` (live EKS operations are scaffold-only) |
 
 See [`docs/WEBHOOK_TRIGGER.md`](docs/WEBHOOK_TRIGGER.md).
 
@@ -198,11 +203,13 @@ region `us-central1`.
 | Cloud Run services inventory | ✅ 12/12 live | [`docs/E2E_TEST_REPORT.md`](docs/E2E_TEST_REPORT.md) |
 | Health + auth + registered applications | ✅ 200, Firestore connected | [`docs/E2E_TEST_REPORT.md`](docs/E2E_TEST_REPORT.md) |
 | Chat SSE stream — full RCA streamed | ✅ 200, `data:[DONE]` | [`docs/E2E_TEST_REPORT.md`](docs/E2E_TEST_REPORT.md) |
+| Admin can open + chat in an autonomous runtime session | ✅ `GET /stream` + `GET /messages` on a `runtime-*` session return 200 | `apps/api/app/chat/routes.py` (`allow_runtime`) |
 | Autonomous trigger → job `COMPLETE` | ✅ worker `processed:1, success:true` | [`docs/E2E_TEST_REPORT.md`](docs/E2E_TEST_REPORT.md) |
+| Cloud Scheduler auto-trigger (poller + worker, no manual curl) | ✅ both jobs ENABLED, requests 200 | Cloud Scheduler (`kaiops-argocd-poller`, `kaiops-agent-worker`, `kaiops-crash-watcher`) |
 | GCP + Azure RCA, cloud-aware routing | ✅ no misroute; live alert state + metrics | [`docs/E2E_TEST_REPORT.md`](docs/E2E_TEST_REPORT.md) |
 | Slack `#incidents` per-app thread (Failed → RCA reply) | ✅ parent + threaded reply verified | [`docs/E2E_TEST_REPORT.md`](docs/E2E_TEST_REPORT.md) |
 | HITL approve → tool runs; reject → tool blocked | ✅ both paths verified | [`docs/E2E_TEST_REPORT.md`](docs/E2E_TEST_REPORT.md) |
-| Grafana dashboards + alerts for every app | ✅ 11 dashboards, 10 alerts | `apps/api/agents/grafana_agent/provision.py` |
+| Grafana dashboards + alerts for every app | ✅ one per registered app (10 apps → 10 dashboards + 10 alerts) | `apps/api/agents/grafana_agent/provision.py` |
 
 ---
 
@@ -225,6 +232,7 @@ published here.
 | `KAI_OPS_FRONTEND_URL` | `<your-frontend-url>` |
 | `SEED_DEMO_USERS` | `false` |
 | `AZURE_MOCK_MODE` | `false` |
+| `AZURE_MCP_ENABLED` | `false` (backend default — the Azure npx MCP server is disabled; Azure RCA uses the native service-principal / KQL path) |
 | `GKE_CLUSTER_NAME` / `GKE_CLUSTER_LOCATION` | `<cluster>` / `<zone>` |
 | `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_SUBSCRIPTION_ID` | `<your Azure service principal>` |
 | `AZURE_RESOURCE_GROUP` / `AZURE_AKS_CLUSTER_NAME` | `<rg>` / `<aks-cluster>` |
@@ -313,8 +321,8 @@ Required APIs: `aiplatform`, `run`, `firestore`, `secretmanager`, `cloudbuild`,
 - **Model Armor has no gateway binding field** on the managed gateway, so platform
   filtering runs at the app / eval layer alongside the independent HITL gate.
 - **Managed Memory Bank is bound to the Agent Engine runtime**, not the Cloud Run
-  demo path — which is why durable recall here is retrieval-grounded through Vertex
-  AI Search rather than the managed service.
+  demo path — which is why durable recall here is retrieval-grounded through Gemini Enterprise Agent Platform
+  AI RAG Engine rather than the managed service.
 - Full governance-bundle status: [`docs/FEATURE_PROGRESS.md`](docs/FEATURE_PROGRESS.md).
 
 ---
