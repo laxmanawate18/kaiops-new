@@ -29,7 +29,12 @@ from agents.azure_rca_agent.prompt import log_rca_expertise
 logger = logging.getLogger(__name__)
 
 # Configuration from environment
-AZURE_MCP_ENABLED = os.environ.get('AZURE_MCP_ENABLED', 'true').lower() == 'true'
+# The Azure Monitor MCP server is stdio-based (`npx @microsoft/azure-mcp-server`),
+# which needs Node.js and is NOT present in the python:3.11-slim Cloud Run image.
+# Default to DISABLED so it never crashes agent load; the Azure RCA agent still
+# works via its FunctionTools (check_application_logs / analyze_pod_logs) and the
+# remote azure-mcp-server (MCP_URL_AZURE).
+AZURE_MCP_ENABLED = os.environ.get('AZURE_MCP_ENABLED', 'false').lower() == 'true'
 
 
 def get_current_iso_time() -> str:
