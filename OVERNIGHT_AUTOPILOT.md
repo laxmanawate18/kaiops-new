@@ -39,9 +39,9 @@ A3b. BACKUP GATE. Do NOT make any change until you confirm the backup exists:
     with the Section A0 command below. No backup → no changes.
 
 A4. PROTECTED PATHS — never delete, move, or rename:
-    kaiops-gcp/  kaiops-aws/  kaiops-azure/   (Docker build contexts for the
-    live Cloud Run A2A specialists; build-a2a-docker.ps1 and
-    deploy-a2a-mesh.ps1 build FROM these)
+    specialists/kaiops-gcp/  specialists/kaiops-aws/  specialists/kaiops-azure/
+    (Docker build contexts for the live Cloud Run A2A specialists;
+    build-a2a-docker.ps1 and deploy-a2a-mesh.ps1 build FROM these)
     Also never delete kaiops/, apps/, mcp-servers/, agent-runtime/,
     infrastructure/.
 

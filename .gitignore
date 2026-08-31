@@ -151,3 +151,6 @@ _ci_logs*.zip
 # Auto-generated graph outputs + one-shot scratch scripts (regenerated/discarded)
 graphify-out/
 apps/api/scratch/
+
+# Local-only scratch/artifacts
+_local_artifacts/

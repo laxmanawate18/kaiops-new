@@ -2,10 +2,10 @@
 # Deploys the KaiOps 4-engine A2A mesh to Agent Runtime with Agent Identity.
 #
 # Engines:
-#   - kaiops-orchestrator  (kaiops/       -> reasoningEngine, RemoteA2aAgent -> 3 specialists)
-#   - kaiops-azure         (kaiops-azure/ -> azure_rca_specialist, exposes A2A at /a2a/azure_rca_specialist)
-#   - kaiops-aws           (kaiops-aws/   -> aws_cloudwatch_rca_specialist)
-#   - kaiops-gcp           (kaiops-gcp/   -> gcp_cloud_logging_rca_specialist)
+#   - kaiops-orchestrator  (_legacy/kaiops/ -> reasoningEngine, RemoteA2aAgent -> 3 specialists)
+#   - kaiops-azure         (specialists/kaiops-azure/ -> azure_rca_specialist)
+#   - kaiops-aws           (specialists/kaiops-aws/   -> aws_cloudwatch_rca_specialist)
+#   - kaiops-gcp           (specialists/kaiops-gcp/   -> gcp_cloud_logging_rca_specialist)
 #
 # A2A auth: shared bearer token stored in Secret Manager as `A2A_SHARED_TOKEN`.
 # Each engine is deployed with --agent-identity (SPIFFE) for GCP access; the A2A
@@ -96,11 +96,11 @@ function A2A-BaseUrl ([string]$engineId) {
 
 # Order matters: deploy specialists FIRST so the orchestrator can resolve their cards.
 $specialists = @(
-    @{ Name="azure"; Folder="kaiops-azure"; App="azure_rca_specialist";
+    @{ Name="azure"; Folder="specialists/kaiops-azure"; App="azure_rca_specialist";
        EnvVars=@{ "GOOGLE_CLOUD_LOCATION"=$Region; "A2A_SHARED_TOKEN_SECRET"=$secretResource; "A2A_SHARED_TOKEN"="" } },
-    @{ Name="aws";   Folder="kaiops-aws";   App="aws_cloudwatch_rca_specialist";
+    @{ Name="aws";   Folder="specialists/kaiops-aws";   App="aws_cloudwatch_rca_specialist";
        EnvVars=@{ "GOOGLE_CLOUD_LOCATION"=$Region; "A2A_SHARED_TOKEN_SECRET"=$secretResource; "A2A_SHARED_TOKEN"="" } },
-    @{ Name="gcp";   Folder="kaiops-gcp";   App="gcp_cloud_logging_rca_specialist";
+    @{ Name="gcp";   Folder="specialists/kaiops-gcp";   App="gcp_cloud_logging_rca_specialist";
        EnvVars=@{ "GOOGLE_CLOUD_LOCATION"=$Region; "A2A_SHARED_TOKEN_SECRET"=$secretResource; "A2A_SHARED_TOKEN"="" } }
 )
 
@@ -122,7 +122,7 @@ if (-not $SkipOrchestrator) {
         "AWS_A2A_BASE_URL"   = $specUrls["aws"]
         "GCP_A2A_BASE_URL"   = $specUrls["gcp"]
     }
-    Deploy-Engine @{ Name="orchestrator"; Folder="kaiops"; EnvVars=$orchEnv }
+    Deploy-Engine @{ Name="orchestrator"; Folder="_legacy/kaiops"; EnvVars=$orchEnv }
 }
 
 Write-Host "`n=== A2A Mesh Deployment Complete ===" -ForegroundColor Green

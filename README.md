@@ -125,12 +125,12 @@ See [`docs/WEBHOOK_TRIGGER.md`](docs/WEBHOOK_TRIGGER.md).
 | `apps/api/app` | FastAPI routers: `applications/`, `auth/`, `chat/` (sessions + HITL approve/reject), `runtime/` (job queue + worker), `slack/`, `feedback/`, `metadata/` |
 | `apps/api/agents` | The agent fleet: `sre_agent/` (root), `gcp_rca_agent/`, `azure_rca_agent/`, `aws_rca_agent/`, `argocd_agent/`, `github_agent/`, `grafana_agent/`, `metadata_agent/`, `k8s_crash_watcher.py`, `executor.py` (cloud-aware remediation) |
 | `apps/web` | **Frontend** (React + Vite). Build context for `kaiops-web` |
-| `kaiops-gcp`, `kaiops-aws`, `kaiops-azure` | **A2A specialist** container contexts (Cloud Run). Each is a parallel deployment, NOT duplicates — do not merge/delete |
+| `specialists/kaiops-gcp`, `kaiops-aws`, `kaiops-azure` | **A2A specialist** container contexts (Cloud Run). Each is a parallel deployment, NOT duplicates — do not merge/delete |
+| `_legacy/kaiops` | **Pre-restructure scaffold + orchestrator** reasoner context (used only by `deploy-a2a-mesh.ps1`); not part of the live backend |
 | `mcp-servers/` | 6 IAM-private Cloud Run MCP servers (argocd / aws / azure / gcp / github / grafana) + `shared/mcp_proxy.py` |
 | `agent-runtime/` | Agent Engine wrapper / A2A mesh glue |
 | `infrastructure/` | Dockerfiles, Cloud Build triggers, GKE/K8s manifests, load balancer Terraform |
 | `docs/` | Architecture, gateway findings, feature progress, test reports, architecture diagrams |
-| `kaiops/` | Governed-deployment variant (Agent Engine runtime source, `deploy_governed.py`). In progress / parallel to `apps/api` |
 
 ---
 
@@ -200,7 +200,7 @@ cd apps/web && npm ci && npm run dev
 
 - Backend: `infrastructure/k8s/deploy-backend-cloudrun.bat` (Cloud Build → Cloud Run)
 - Frontend: `infrastructure/k8s/deploy-frontend-cloudrun.sh`
-- A2A mesh: `deploy-a2a-mesh.ps1` (builds from `kaiops-gcp|aws|azure`)
+- A2A mesh: `deploy-a2a-mesh.ps1` (builds from `specialists/kaiops-gcp|aws|azure` + `_legacy/kaiops`)
 - CI/CD for GKE: `.github/workflows/deploy-to-gke.yml`
 
 ---

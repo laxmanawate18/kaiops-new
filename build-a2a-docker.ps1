@@ -28,9 +28,9 @@ $REGION = "us-central1"
 $tag = "${REGION}-docker.pkg.dev/${PROJ}/${REPO}"
 
 $specials = [ordered]@{
-    gcp   = @{ dir = "$root\kaiops-gcp";   app = "gcp_cloud_logging_rca_specialist"; url = "http://localhost:8080" }
-    aws   = @{ dir = "$root\kaiops-aws";   app = "aws_cloudwatch_rca_specialist";    url = "http://localhost:8080" }
-    azure = @{ dir = "$root\kaiops-azure"; app = "azure_rca_specialist";             url = "http://localhost:8080" }
+    gcp   = @{ dir = "$root\specialists\kaiops-gcp";   app = "gcp_cloud_logging_rca_specialist"; url = "http://localhost:8080" }
+    aws   = @{ dir = "$root\specialists\kaiops-aws";   app = "aws_cloudwatch_rca_specialist";    url = "http://localhost:8080" }
+    azure = @{ dir = "$root\specialists\kaiops-azure"; app = "azure_rca_specialist";             url = "http://localhost:8080" }
 }
 
 function Build-One([string]$name) {
