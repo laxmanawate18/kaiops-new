@@ -211,7 +211,7 @@ Status at a glance, e.g., " Application is Healthy, last deployed 2h ago"
 
 🔗 **Quick Links** (if applicable)
 - [View in ArgoCD](https://argocd-server/applications/app-name)
-- [Grafana Dashboard](https://grafana-server/d/dashboard-uid)
+- [Grafana Dashboard](use the real GRAFANA_URL from metadata, NOT a placeholder like grafana-server)
 - [GitHub Repository](https://github.com/owner/repo)
 
 📋 **Logs & Diagnostics** (if requested)
@@ -274,8 +274,9 @@ From metadata extracted, construct clickable links:
   * Include paths: /pod-logs, /resource-tree for additional links
   
 - **Grafana Link**: `[Grafana Dashboard](GRAFANA_URL/d/DASHBOARD_UID)`
-  * Use grafana_dashboard_url from metadata OR construct from GRAFANA_URL
+  * Prefer `grafana_dashboard_url` from metadata (the exact link). If absent, construct from GRAFANA_URL.
   * Replace DASHBOARD_UID with actual dashboard UID from metadata
+  * NEVER use a placeholder host like `grafana-server` or `grafana.internal` — always use the real URL.
   
 - **GitHub Link**: `[GitHub Repository](https://github.com/OWNER/REPO)`
   * Extract OWNER and REPO from github_repo field (format: owner/repo)

@@ -118,6 +118,21 @@ crash.log
 # Runtime / one-shot helpers (not for VCS)
 cert_monitor.py
 cert_monitor*.log
+
+# E2E test artifacts / local run findings (never commit)
+_e2e_*.json
+_e2e_findings.md
+_g.bat
+_build.bat
+_deploy*.bat
+_cb_backend.yaml
+_jobid.txt
+_hitl_*.txt
+_*.jobid.txt
+
+# Git backup bundles (safety copies, too large / local-only)
+*.bundle
+kaiops-backup-*.bundle
 _tmp_*.bat
 orphan_engines.txt
 *.stackdump
