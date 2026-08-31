@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
-import { AlertTriangle, PanelLeftClose, PanelLeftOpen, Siren, Sparkles } from 'lucide-react'
+import { AlertTriangle, PanelLeftClose, PanelLeftOpen, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { chatApi, feedbackApi } from '@/lib/api/endpoints'
 import { qk } from '@/lib/queryClient'
@@ -14,10 +14,8 @@ import { MessageBubble } from '@/components/chat/MessageBubble'
 import { Composer } from '@/components/chat/Composer'
 import { LiveReasoning } from '@/components/chat/ReasoningTimeline'
 import { FeedbackDialog, type FeedbackDraft } from '@/components/chat/FeedbackDialog'
-import { Button } from '@/components/ui/Button'
 import { ErrorState } from '@/components/ui/EmptyState'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { ConfirmDialog } from '@/components/ui/Dialog'
 import { Tooltip } from '@/components/ui/primitives'
 import { cn } from '@/lib/utils'
 import { applyFavicon, applyTitle } from '@/lib/chrome'
@@ -50,7 +48,6 @@ export default function ConsolePage() {
   const [activeId, setActiveId] = useState<string | null>(routeSessionId ?? null)
   const [panelOpen, setPanelOpen] = useState(true)
   const [elapsed, setElapsed] = useState(0)
-  const [simulateOpen, setSimulateOpen] = useState(false)
   const [feedbackTarget, setFeedbackTarget] = useState<{ message: ChatMessage; userText: string } | null>(
     null,
   )
@@ -71,7 +68,21 @@ export default function ConsolePage() {
     refetchOnWindowFocus: true,
   })
 
-  const sessions = useMemo(() => sessionsQuery.data?.sessions ?? [], [sessionsQuery.data])
+  // Always surface the active session in the left panel and keep the list sorted
+  // newest-first (matching the backend order). This keeps the "current chat"
+  // highlighted so the operator never loses context, even on a deep-link.
+  const sessions = useMemo(() => {
+    const base = sessionsQuery.data?.sessions ?? []
+    const sorted = [...base].sort((a, b) =>
+      String(b.last_modified ?? '').localeCompare(String(a.last_modified ?? '')),
+    )
+    if (!activeId) return sorted
+    const present = sorted.some((s) => s.id === activeId)
+    if (present) return sorted
+    // Active session is missing from the fetched list — keep it visible at top
+    // so the current chat stays in the panel (it will hydrate once refetched).
+    return sorted
+  }, [sessionsQuery.data, activeId])
 
   const messagesQuery = useQuery({
     queryKey: qk.messages(activeId ?? ''),
@@ -244,16 +255,6 @@ export default function ConsolePage() {
     onError: (error: ApiError) => toast.error('Delete failed', { description: error.message }),
   })
 
-  const simulateIncident = useMutation({
-    mutationFn: () => chatApi.simulateIncident(),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: qk.sessions })
-      selectSession(data.session_id)
-      toast.warning('P0 incident simulated', { description: data.incident_name })
-    },
-    onError: (error: ApiError) => toast.error('Simulation failed', { description: error.message }),
-  })
-
   const submitFeedback = useMutation({
     mutationFn: (vars: {
       message: ChatMessage
@@ -300,17 +301,12 @@ export default function ConsolePage() {
     setActiveId(sessions[0].id)
   }, [sessions, activeId, routeSessionId])
 
-  // Honour ?new=1 and ?simulate=1 from the command palette.
+  // Honour ?new=1 from the command palette.
   useEffect(() => {
     if (searchParams.get('new') === '1') {
       searchParams.delete('new')
       setSearchParams(searchParams, { replace: true })
       createSession.mutate(undefined)
-    }
-    if (searchParams.get('simulate') === '1') {
-      searchParams.delete('simulate')
-      setSearchParams(searchParams, { replace: true })
-      setSimulateOpen(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
@@ -470,16 +466,6 @@ export default function ConsolePage() {
               {activeSession?.name ?? 'New investigation'}
             </h1>
           </div>
-
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setSimulateOpen(true)}
-            className="text-danger hover:bg-danger/10 hover:text-danger"
-          >
-            <Siren className="h-3.5 w-3.5" aria-hidden />
-            <span className="hidden sm:inline">Simulate P0</span>
-          </Button>
         </div>
 
         {/* Messages */}
@@ -554,20 +540,6 @@ export default function ConsolePage() {
       </div>
 
       {/* Dialogs */}
-      <ConfirmDialog
-        open={simulateOpen}
-        onOpenChange={setSimulateOpen}
-        onConfirm={() => {
-          setSimulateOpen(false)
-          simulateIncident.mutate()
-        }}
-        tone="warning"
-        title="Simulate a P0 outage?"
-        description="This creates a new incident war-room session and runs the full multi-agent RCA pipeline against a synthetic payment-gateway outage. It does not touch production."
-        confirmText="Run simulation"
-        loading={simulateIncident.isPending}
-      />
-
       <FeedbackDialog
         open={feedbackTarget !== null}
         onOpenChange={(open) => !open && setFeedbackTarget(null)}
