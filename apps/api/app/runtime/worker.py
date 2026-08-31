@@ -177,6 +177,10 @@ async def run_job(job: Dict[str, Any], session_service: VertexFirestoreSessionSe
                 # Classify the RCA so the Slack thread tags SRE team when it is
                 # infra-related (per the app-vs-infra classifier).
                 is_infra = classify_root_cause(response) == "infra"
+                # Use a unique per-run thread key so each RCA gets its OWN fresh
+                # parent thread in Slack (easy to visualize), instead of piling
+                # sub-replies into one app thread.
+                thread_key = f"{app_name}::{job_id}"
                 await post_rca_report(
                     app_name=app_name,
                     rca_text=response or "RCA completed. See console for details.",
@@ -184,8 +188,9 @@ async def run_job(job: Dict[str, Any], session_service: VertexFirestoreSessionSe
                     session_link=session_link,
                     hitl_action_id=approval_token if awaits_confirm else "",
                     is_infra=is_infra,
+                    thread_key=thread_key,
                 )
-                logger.info(f"[RUNTIME] Posted RCA report to Slack thread for {app_name} (is_infra={is_infra})")
+                logger.info(f"[RUNTIME] Posted RCA report to Slack thread for {app_name} (is_infra={is_infra}) key={thread_key}")
         except Exception as slack_err:  # noqa: BLE001
             logger.warning(f"[RUNTIME] post_rca_report (Slack) failed: {slack_err}")
 

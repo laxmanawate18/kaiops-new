@@ -40,17 +40,17 @@ def _channel() -> str:
     return SLACK_CHANNEL_ID or SLACK_CHANNEL or ""
 
 
-def _get_thread_ts(app_name: str) -> Optional[str]:
+def _get_thread_ts(key: str) -> Optional[str]:
     try:
-        doc = _thread_ref().document(app_name).get()
+        doc = _thread_ref().document(key).get()
         return doc.to_dict().get("thread_ts") if doc.exists else None
     except Exception:  # noqa: BLE001
         return None
 
 
-def _save_thread_ts(app_name: str, ts: str) -> None:
+def _save_thread_ts(key: str, ts: str) -> None:
     try:
-        _thread_ref().document(app_name).set({"thread_ts": ts, "app_name": app_name})
+        _thread_ref().document(key).set({"thread_ts": ts, "app_name": key})
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[SLACK] save thread ts failed: {e}")
 
@@ -182,15 +182,17 @@ def _send_update(channel: str, ts: str, blocks: list) -> bool:
         return False
 
 
-def _ensure_thread(app_name: str, status: str, channel: str, details: dict = None) -> str:
+def _ensure_thread(app_name: str, status: str, channel: str, details: dict = None,
+                   thread_key: str = "") -> str:
     """Create/repair the parent thread message; return the parent thread_ts.
 
-    - If no thread exists: creates the parent ``[App_Name] Healthy|Failed`` header
-      + a details section.
-    - If a thread exists but has a stale/legacy header (e.g. `[❌ Failed]` without
-      the app name, or a `[FAIL]` content), it is repaired to the correct format.
+    ``thread_key`` (defaults to ``app_name``) identifies the thread. Pass a
+    unique key (e.g. ``{app_name}::{incident_id}``) to force a NEW parent thread
+    per incident run so each RCA is its own clean thread. If omitted, the app's
+    single thread is reused (legacy behaviour).
     """
-    existing_ts = _get_thread_ts(app_name)
+    key = thread_key or app_name
+    existing_ts = _get_thread_ts(key)
     if existing_ts:
         # Best-effort repair of a stale parent header to the correct `[App_Name]` format.
         try:
@@ -216,20 +218,21 @@ def _ensure_thread(app_name: str, status: str, channel: str, details: dict = Non
     blocks.extend(_details_blocks(details or {}))
     parent_ts = _send({"channel": channel, "text": f"[{app_name}] {status}", "blocks": blocks})
     if parent_ts:
-        _save_thread_ts(app_name, parent_ts)
+        _save_thread_ts(key, parent_ts)
     return parent_ts or ""
 
 
 async def report_app_status(app_name: str, status: str, detail: str = "",
                             cloud_provider: str = "gcp", is_infra: bool = False,
                             session_link: str = "", hitl_action_id: str = "",
-                            details: dict = None) -> str:
-    """Report app deployment status to the per-application Slack thread.
+                            details: dict = None, thread_key: str = "") -> str:
+    """Report app deployment status to a Slack thread.
 
     - Creates the **parent thread** with the ``[App_Name] Healthy|Failed`` header
       + a details section (cluster, cloud provider, namespace...).
     - Posts the **RCA detail as a subthread reply**, with the session link + SRE tag
       + Approve/Reject buttons (if ``hitl_action_id`` set).
+    - ``thread_key`` (defaults to app_name) lets you force a fresh thread per run.
 
     Returns the reply message ts (or parent ts on first creation).
     """
@@ -242,7 +245,7 @@ async def report_app_status(app_name: str, status: str, detail: str = "",
         logger.warning("[SLACK] no channel configured")
         return ""
 
-    parent_ts = _ensure_thread(app_name, status, channel, details or {})
+    parent_ts = _ensure_thread(app_name, status, channel, details or {}, thread_key=thread_key)
     # Detail goes in a subthread reply so the parent stays as the clean status header.
     blocks = _blocks(status, detail, session_link, is_infra, hitl_action_id)
     text = f"{app_name}: {status}"
@@ -263,19 +266,24 @@ async def report_app_status(app_name: str, status: str, detail: str = "",
 
 async def post_rca_report(app_name: str, rca_text: str, status: str = "Failed",
                           session_link: str = "", hitl_action_id: str = "",
-                          is_infra: bool = False) -> str:
-    """Post the full RCA report as a subthread reply under the app's thread.
+                          is_infra: bool = False, thread_key: str = "") -> str:
+    """Post the full RCA report as a (sub)thread reply.
 
-    Called after the worker completes an RCA so the detailed report (with the
-    session link and Approve/Reject buttons) lands in the same thread as the
-    ``[App_Name] Failed`` parent header.
+    Called after the worker completes an RCA. If ``thread_key`` is provided (a
+    unique per-incident id) this creates/uses a fresh parent thread for THAT run;
+    otherwise it reuses the app's single thread (legacy behaviour).
     """
     if not SLACK_BOT_TOKEN:
         return ""
     channel = _channel()
     if not channel:
         return ""
-    parent_ts = _get_thread_ts(app_name)
+    parent_ts = ""
+    if thread_key:
+        # Force a NEW parent thread per incident run — no reuse of a stale app thread.
+        parent_ts = _ensure_thread(app_name, status, channel, None, thread_key=thread_key)
+    else:
+        parent_ts = _get_thread_ts(app_name)
     blocks = _blocks(status, rca_text, session_link, is_infra, hitl_action_id)
     payload = {"channel": channel, "text": f"{app_name} RCA", "blocks": blocks}
     if parent_ts:

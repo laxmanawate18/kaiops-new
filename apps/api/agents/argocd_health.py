@@ -422,12 +422,14 @@ async def _handle_failure(app_name: str, state: Dict[str, Any]) -> None:
         "env": "production",
     }
     try:
+        thread_key = f"{app_name}::{job_id}" if job_id else ""
         await report_app_status(
             app_name=app_name, status="Failed",
             detail=f"ArgoCD health: *{state.get('health')}* | sync: *{state.get('sync')}*.\n"
                    f"RCA in progress — the full report will follow in this thread.",
             cloud_provider=provider,
             session_link=session_link, details=details,
+            thread_key=thread_key,
         )
     except Exception as e:  # noqa: BLE001
         logger.error(f"[ARGOCD] Slack report failed: {e}")
