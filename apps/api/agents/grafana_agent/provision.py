@@ -25,13 +25,25 @@ GRAFANA_PASSWORD = os.getenv("GRAFANA_PASSWORD", "")
 _PROM_DS_UID = os.getenv("GRAFANA_PROM_DS_UID", "ffwg1nl67w4xsd")
 KAI_OPS_FOLDER_UID = "kaiops"
 
-# PromQL used to build per-app panels. Scoped by namespace (the app's k8s ns).
-def _panel_exprs(namespace: str) -> dict:
+# Sanitize an app name into a valid Grafana dashboard/alert uid.
+def _safe_uid(app_name: str) -> str:
+    import re
+    base = re.sub(r"[^a-zA-Z0-9-_]+", "-", (app_name or "").strip()).strip("-").lower()
+    return base or "app"
+
+
+# PromQL used to build per-app panels. Scoped by namespace (the app's k8s ns),
+# falling back to app-label scoping when no namespace is known.
+def _panel_exprs(namespace: str, app_name: str = "") -> dict:
+    if namespace:
+        scope = f'namespace="{namespace}"'
+    else:
+        scope = f'app="{_safe_uid(app_name)}"'
     return {
-        "cpu": f'sum(rate(container_cpu_usage_seconds_total{{namespace="{namespace}"}}[5m]))',
-        "memory": f'sum(container_memory_working_set_bytes{{namespace="{namespace}"}})',
-        "pods": f'count(kube_pod_status_phase{{namespace="{namespace}"}} and kube_pod_status_phase{{namespace="{namespace}"}})',
-        "errors": f'sum(rate(container_cpu_usage_seconds_total{{namespace="{namespace}"}}[5m]))',  # placeholder
+        "cpu": f'sum(rate(container_cpu_usage_seconds_total{{{scope}}}[5m]))',
+        "memory": f'sum(container_memory_working_set_bytes{{{scope}}})',
+        "pods": f'count(kube_pod_status_phase{{{scope}}} and kube_pod_status_phase{{{scope}}})',
+        "errors": f'sum(rate(container_cpu_usage_seconds_total{{{scope}}}[5m]))',  # placeholder
     }
 
 
@@ -89,7 +101,7 @@ def create_app_dashboard(app_name: str, namespace: str = "") -> str:
     if not _grafana_reachable():
         logger.warning("[GRAFANA] not reachable; skipping dashboard")
         return ""
-    uid = f"kaiops-{app_name}"
+    uid = f"kaiops-{_safe_uid(app_name)}"
     title = f"KaiOps {app_name}"
     ds = _discover_prom_uid()
     try:
@@ -103,13 +115,14 @@ def create_app_dashboard(app_name: str, namespace: str = "") -> str:
     folder_uid = _ensure_kaiops_folder()
     panel_common = {"datasource": {"type": "prometheus", "uid": ds},
                     "targets": [{"expr": "", "refId": "A", "datasource": {"type": "prometheus", "uid": ds}}]}
+    exprs = _panel_exprs(namespace, app_name)
     panels = [
         {"id": 1, "title": "CPU Usage", "type": "timeseries", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
-         **panel_common, "targets": [{"expr": _panel_exprs(namespace)["cpu"], "refId": "A", "datasource": {"type": "prometheus", "uid": ds}}]},
+         **panel_common, "targets": [{"expr": exprs["cpu"], "refId": "A", "datasource": {"type": "prometheus", "uid": ds}}]},
         {"id": 2, "title": "Memory Usage", "type": "timeseries", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
-         **panel_common, "targets": [{"expr": _panel_exprs(namespace)["memory"], "refId": "A", "datasource": {"type": "prometheus", "uid": ds}}]},
+         **panel_common, "targets": [{"expr": exprs["memory"], "refId": "A", "datasource": {"type": "prometheus", "uid": ds}}]},
         {"id": 3, "title": "Pods by Phase", "type": "stat", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
-         **panel_common, "targets": [{"expr": _panel_exprs(namespace)["pods"], "refId": "A", "datasource": {"type": "prometheus", "uid": ds}}]},
+         **panel_common, "targets": [{"expr": exprs["pods"], "refId": "A", "datasource": {"type": "prometheus", "uid": ds}}]},
     ]
     dash = {
         "dashboard": {
@@ -154,7 +167,10 @@ def create_app_alert(app_name: str, namespace: str = "") -> str:
     except Exception:  # noqa: BLE001
         pass
 
-    expr = f'kube_pod_container_status_restarts_total{{namespace="{namespace}"}}'
+    if namespace:
+        expr = f'kube_pod_container_status_restarts_total{{namespace="{namespace}"}}'
+    else:
+        expr = f'kube_pod_container_status_restarts_total{{app="{_safe_uid(app_name)}"}}'
     data = [
         {"refId": "A", "datasourceUid": ds, "relativeTimeRange": {"from": 5, "to": 0},
          "model": {"expr": expr, "refId": "A", "queryType": "range", "range": True,
@@ -168,7 +184,7 @@ def create_app_alert(app_name: str, namespace: str = "") -> str:
                    "datasource": {"type": "__expr__", "uid": "__expr__"}}},
     ]
     rule = {
-        "uid": f"kaiops-{app_name}-alert",
+        "uid": f"kaiops-{_safe_uid(app_name)}-alert",
         "title": title,
         "condition": "C",
         "data": data,

@@ -155,14 +155,17 @@ def parse_mcp_response(result: Dict[str, Any]) -> Dict[str, Any]:
     
     content = result.get("content", [])
     if content and len(content) > 0:
-        text_content = content[0].get("text", "{}")
+        # content items are usually {"type":"text","text":...} but some MCP
+        # servers return plain strings — guard against both.
+        first = content[0]
+        text_content = first.get("text", "{}") if isinstance(first, dict) else str(first)
         try:
             parsed = json.loads(text_content)
             return parsed
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON from MCP text: {e}")
             logger.error(f"Raw text was: {text_content[:500]}")
-            return {}
+            return {"text": text_content} if text_content else {}
     
     logger.warning("No content in MCP response")
     return {}

@@ -30,7 +30,10 @@ class GrafanaMCPServer {
 
     // Get configuration from environment variables
     this.grafanaUrl = process.env.GRAFANA_URL || "http://localhost:3000";
-    this.serviceAccountToken = process.env.GRAFANA_SERVICE_ACCOUNT_TOKEN || "";
+    // Strip so a secret with a trailing newline/CR (common when written via
+    // `echo > file` / Secret Manager) never breaks the Authorization header —
+    // Grafana rejects whitespace/control chars in header values.
+    this.serviceAccountToken = (process.env.GRAFANA_SERVICE_ACCOUNT_TOKEN || "").trim();
 
     console.error(`🔧 Grafana MCP Server initialized:`);
     console.error(`   URL: ${this.grafanaUrl}`);

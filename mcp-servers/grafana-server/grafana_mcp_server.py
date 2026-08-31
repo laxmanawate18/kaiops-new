@@ -18,12 +18,16 @@ from mcp.server import FastMCP
 class GrafanaMCPServer:
     def __init__(self):
         self.grafana_url = os.getenv("GRAFANA_URL", "http://localhost:3000")
-        # Accept any of the common token variable names
+        # Accept any of the common token variable names. Strip so secrets with a
+        # trailing newline/CR (common when written via `echo > file`) never break
+        # the Authorization header (Grafana rejects whitespace in header values).
         self.service_account_token = (
-            os.getenv("GRAFANA_SERVICE_ACCOUNT_TOKEN")
-            or os.getenv("GRAFANA_API_KEY")
-            or os.getenv("GRAFANA_TOKEN")
-            or ""
+            (
+                os.getenv("GRAFANA_SERVICE_ACCOUNT_TOKEN")
+                or os.getenv("GRAFANA_API_KEY")
+                or os.getenv("GRAFANA_TOKEN")
+                or ""
+            ).strip()
         )
 
         print(f"[*] Grafana MCP Server initialized:", file=sys.stderr)

@@ -15,10 +15,15 @@ async def _call_and_format_grafana_mcp(tool_name: str, **kwargs) -> str:
         result = await call_mcp_tool('grafana', tool_name, **kwargs)
         if "error" in result:
             return f"[FAIL] **Grafana MCP Error**: {result['error']}"
-            
+
         content = result.get("content", [])
         if content and len(content) > 0:
-            return content[0].get("text", "No content returned.")
+            # content items are normally {"type":"text","text":...} but some
+            # MCP servers return bare strings — handle both safely.
+            first = content[0]
+            if isinstance(first, dict):
+                return first.get("text", "No content returned.")
+            return str(first)
         return "No content in MCP response."
     except Exception as e:
         logger.error(f"Grafana MCP call failed: {e}")

@@ -267,6 +267,7 @@ def _auto_register_app(app_name: str, state: Dict[str, Any]) -> None:
             "status": "ACTIVE",
             "grafana_dashboard": grafana.get("grafana_dashboard", ""),
             "grafana_dashboard_url": grafana.get("grafana_dashboard_url", ""),
+            "grafana_alert": grafana.get("grafana_alert", ""),
             "custom_metadata": [{"key": "source", "value": "argocd_auto_register"}],
         }
         application_db.create_application(app_data)
@@ -345,13 +346,26 @@ async def _handle_failure(app_name: str, state: Dict[str, Any]) -> None:
     incident_type = (state.get("sync") or state.get("health") or "failed").lower()
     provider = "gcp"
     grafana_dash = ""
+    grafana_url = ""
+    grafana_alert = ""
     try:
         from app.applications.database_firestore import application_db
         app = application_db.get_application_by_name(app_name)
         provider = (app or {}).get("cloud_provider") or provider
         grafana_dash = (app or {}).get("grafana_dashboard") or ""
+        grafana_url = (app or {}).get("grafana_dashboard_url") or ""
+        grafana_alert = (app or {}).get("grafana_alert") or ""
     except Exception:  # noqa: BLE001
         pass
+
+    # Fall back to constructing the URL from the env GRAFANA_URL when metadata
+    # doesn't carry one, so the report's dashboard link is always clickable.
+    if not grafana_url:
+        base = os.environ.get("GRAFANA_URL", "").rstrip("/")
+        if base and grafana_dash:
+            grafana_url = f"{base}/d/{grafana_dash}"
+        elif base:
+            grafana_url = f"{base}/d/kaiops-{app_name}"
 
     prompt = (
         f"ArgoCD reports application `{app_name}` is unhealthy/degraded. "
@@ -362,9 +376,12 @@ async def _handle_failure(app_name: str, state: Dict[str, Any]) -> None:
         # Grafana observability: surface the app's dashboard + alert rules in the RCA.
         f"\nOBSERVABILITY: Use the Grafana tools (search_dashboards, list_alert_rules, "
         f"get_dashboard_summary, query_prometheus) to pull metrics and alert state for `{app_name}`. "
-        f"The app's Grafana dashboard uid is `{grafana_dash or 'kaiops-'+app_name}`. "
+        f"The app's Grafana dashboard uid is `{grafana_dash or 'kaiops-'+(app_name.lower().replace(' ','-'))}` "
+        f"and its dashboard URL is `{grafana_url or 'not-configured'}`. "
+        f"The app's Grafana alert rule uid (if any) is `{grafana_alert or 'not-configured'}`. "
         "Include in your report: the dashboard name/link/uid, any firing/alarming alert rules, "
-        "and 2-3 Prometheus metrics (CPU/memory/error rate or pod restarts) that support your diagnosis.\n"
+        "and 2-3 Prometheus metrics (CPU/memory/error rate or pod restarts) that support your diagnosis. "
+        "Use the exact dashboard URL above (never a placeholder like grafana.internal).\n"
         "After the RCA, send the summary to Slack with the status header "
         "[App_Name] Failed and tag SRE team if it is infra-related."
     )
