@@ -20,7 +20,8 @@ async def _call_and_format_github_mcp(tool_name: str, **kwargs) -> str:
             
         content = result.get("content", [])
         if content and len(content) > 0:
-            return content[0].get("text", "No content returned.")
+            first = content[0]
+            return first.get("text", "No content returned.") if isinstance(first, dict) else str(first)
         return "No content in MCP response."
     except Exception as e:
         logger.error(f"GitHub MCP call failed: {e}")

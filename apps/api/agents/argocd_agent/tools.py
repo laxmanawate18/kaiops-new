@@ -19,7 +19,8 @@ async def _call_and_format_argocd_mcp(tool_name: str, **kwargs) -> str:
             
         content = result.get("content", [])
         if content and len(content) > 0:
-            return content[0].get("text", "No content returned.")
+            first = content[0]
+            return first.get("text", "No content returned.") if isinstance(first, dict) else str(first)
         return "No content in MCP response."
     except Exception as e:
         logger.error(f"ArgoCD MCP call failed: {e}")
@@ -78,7 +79,12 @@ async def rollback_application(app_name: str, target_commit: str = "", prune: bo
             return f"[FAIL] **ArgoCD MCP Error**: {result['error']}"
 
         content = result.get("content", [])
-        raw = content[0].get("text", "{}") if content else "{}"
+        if content and isinstance(content[0], dict):
+            raw = content[0].get("text", "{}")
+        elif content:
+            raw = str(content[0])
+        else:
+            raw = "{}"
         data = json.loads(raw) if raw else {}
 
         if "error" in data:

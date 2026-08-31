@@ -218,6 +218,8 @@ class ApplicationResponse(BaseModel):
     argocd_app_name: Optional[str] = None
     grafana_dashboard: Optional[str] = None
     grafana_alert_name: Optional[str] = None
+    grafana_dashboard_url: Optional[str] = None
+    grafana_alert: Optional[str] = None
     description: Optional[str] = None
     application_criticality: Optional[str] = None
     custom_metadata: Optional[List[Dict[str, str]]] = None
