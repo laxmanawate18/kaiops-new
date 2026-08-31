@@ -216,15 +216,24 @@ def _app_metadata_exists(app_name: str) -> bool:
 def _infer_cloud_provider(cluster: str) -> str:
     """Infer the cloud provider from an ArgoCD destination server / cluster name.
 
-    AKS control-plane DNS ends in ``*.azmk8s.io`` or ``*.hcp.*.azmk8s.io``;
-    EKS hosts are ``*.eks.amazonaws.com`` and kubeconfig contexts are
-    ``arn:aws:eks:...``. Anything else (``kubernetes.default.svc`` = in-cluster
-    GKE) defaults to ``gcp``.
+    AKS control-plane DNS ends in ``*.azmk8s.io`` or ``*.hcp.*.azmk8s.io``; EKS
+    hosts are ``*.eks.amazonaws.com``, ``*.elb.<region>.amazonaws.com`` and
+    kubeconfig contexts are ``arn:aws:eks:...`` or ``:cluster/...`` or an
+    ``eks-<name>.gr7...eks.amazonaws.com`` control plane. Anything else
+    (``kubernetes.default.svc`` = in-cluster GKE) defaults to ``gcp``.
     """
     c = (cluster or "").lower()
     if "azmk8s" in c or ".azure." in c:
         return "azure"
-    if ".eks.amazonaws.com" in c or "arn:aws:eks" in c or ":cluster/" in c:
+    if (
+        ".eks.amazonaws.com" in c
+        or "arn:aws:eks" in c
+        or ":cluster/" in c
+        or ".elb." in c
+        or ".amazonaws.com" in c
+        or "ec2." in c
+        or c.startswith("eks-")
+    ):
         return "aws"
     return "gcp"
 
