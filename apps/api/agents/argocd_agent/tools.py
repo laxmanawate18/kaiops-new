@@ -85,9 +85,14 @@ async def rollback_application(app_name: str, target_commit: str = "", prune: bo
             raw = str(content[0])
         else:
             raw = "{}"
-        data = json.loads(raw) if raw else {}
+        # Normalize: json.loads may return a scalar (str) — ensure a dict before .get/[..].
+        parsed = json.loads(raw) if raw else {}
+        if not isinstance(parsed, dict):
+            # If the MCP sent a plain scalar string, surface it as the outcome.
+            return f"[OK] **Rollback initiated**: {parsed}"
 
-        if "error" in data:
+        data = parsed
+        if data.get("error"):
             return f"[FAIL] **Rollback failed**: {data['error']}"
 
         lines = [

@@ -239,29 +239,39 @@ def rollback_application(app_name: str, target_revision: str = "", deployment_id
 
         if resolved_id is None or int(resolved_id) < 0:
             rev = (target_revision or "").strip().lower()
-            if not rev or rev in ("n/a", "none"):
-                return json.dumps({
-                    "error": "Either target_revision (commit SHA) or deployment_id is required for rollback."
-                })
 
             data = server.make_argocd_request(f"/applications/{app_name}", "GET")
             if isinstance(data, dict) and "error" in data:
                 return json.dumps(data)
 
             history = data.get("status", {}).get("history", []) if isinstance(data, dict) else []
-            match = next(
-                (h for h in history if str(h.get("revision", "")).lower().startswith(rev)),
-                None,
-            )
-            if not match:
-                revisions = [h.get("revision", "")[:12] for h in history]
-                return json.dumps({
-                    "error": (
-                        f"Revision '{target_revision}' not found in deployment history "
-                        f"of '{app_name}'. Available revisions: {revisions}"
-                    )
-                })
-            resolved_id = match.get("id")
+
+            if not rev or rev in ("n/a", "none"):
+                # No revision given -> roll back to the most recent PRIOR deployment
+                # (history is sorted oldest->newest; pick the last one, or the 2nd-last
+                # if the current sync is the newest entry).
+                if not history:
+                    return json.dumps({
+                        "error": f"No deployment history found for '{app_name}'. Nothing to roll back to."
+                    })
+                # Prefer the entry immediately before the latest (a prior good deploy);
+                # fall back to the only entry if there is just one.
+                resolved_id = history[-1].get("id") if len(history) == 1 else history[-2].get("id")
+                target_revision = str(history[-1].get("revision", ""))
+            else:
+                match = next(
+                    (h for h in history if str(h.get("revision", "")).lower().startswith(rev)),
+                    None,
+                )
+                if not match:
+                    revisions = [h.get("revision", "")[:12] for h in history]
+                    return json.dumps({
+                        "error": (
+                            f"Revision '{target_revision}' not found in deployment history "
+                            f"of '{app_name}'. Available revisions: {revisions}"
+                        )
+                    })
+                resolved_id = match.get("id")
 
             # Detect Git auto-sync BEFORE attempting rollback (ArgoCD 400s otherwise)
             sync_policy = data.get("spec", {}).get("syncPolicy", {}) if isinstance(data, dict) else {}
