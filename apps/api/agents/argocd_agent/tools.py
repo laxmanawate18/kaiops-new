@@ -14,9 +14,13 @@ async def _call_and_format_argocd_mcp(tool_name: str, **kwargs) -> str:
     """Helper to call MCP and return the raw text content."""
     try:
         result = await call_mcp_tool('argocd', tool_name, **kwargs)
+        # The MCP proxy may return a bare string (not wrapped in {"content": ...})
+        # for some tools — normalize so downstream never calls .get on a str.
+        if isinstance(result, str):
+            return result
         if "error" in result:
             return f"[FAIL] **ArgoCD MCP Error**: {result['error']}"
-            
+
         content = result.get("content", [])
         if content and len(content) > 0:
             first = content[0]
@@ -75,6 +79,9 @@ async def rollback_application(app_name: str, target_commit: str = "", prune: bo
 
     try:
         result = await call_mcp_tool("argocd", "rollback_application", **kwargs)
+        # The MCP proxy may return a bare string (not wrapped) — surface it directly.
+        if isinstance(result, str):
+            return result
         if "error" in result:
             return f"[FAIL] **ArgoCD MCP Error**: {result['error']}"
 
